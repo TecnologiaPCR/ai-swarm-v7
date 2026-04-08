@@ -20,9 +20,10 @@ const USERS_FILE = path.join(DATA_DIR, "users.json");
 const AUDIT_FILE = path.join(DATA_DIR, "audit.log");
 
 const ROLES = {
-  admin:    { label:"Administrador", canManageUsers:true,  canRunSwarm:true,  canViewAudit:true  },
-  operator: { label:"Operador",      canManageUsers:false, canRunSwarm:true,  canViewAudit:false },
-  viewer:   { label:"Viewer",        canManageUsers:false, canRunSwarm:false, canViewAudit:false },
+  superadmin: { label:"Super Admin",    canManageUsers:true,  canRunSwarm:true,  canViewAudit:true,  canManageSuperAdmin:true  },
+  admin:      { label:"Administrador",  canManageUsers:true,  canRunSwarm:true,  canViewAudit:true,  canManageSuperAdmin:false },
+  operator:   { label:"Operador",       canManageUsers:false, canRunSwarm:true,  canViewAudit:false, canManageSuperAdmin:false },
+  viewer:     { label:"Viewer",         canManageUsers:false, canRunSwarm:false, canViewAudit:false, canManageSuperAdmin:false },
 };
 
 // ── User store ────────────────────────────────────────────────────────────
@@ -30,15 +31,42 @@ function readUsers()   { try { return JSON.parse(fs.readFileSync(USERS_FILE,"utf
 function writeUsers(u) { fs.writeFileSync(USERS_FILE, JSON.stringify(u,null,2)); }
 function findUser(email) { return readUsers().find(u => u.email.toLowerCase()===email.toLowerCase()); }
 
-// Seed default admin
+// Seed: always ensure superadmin from env vars exists + default admin on first run
 (function seed() {
-  if (readUsers().length > 0) return;
-  const pass  = process.env.ADMIN_PASSWORD || "Admin2024!";
-  const email = process.env.ADMIN_EMAIL    || "admin@aiswarm.lab";
-  writeUsers([{ id:crypto.randomUUID(), email, name:"Administrador", role:"admin",
-    password:bcrypt.hashSync(pass,12), active:true, createdAt:new Date().toISOString(),
-    lastLogin:null, loginCount:0 }]);
-  console.log("Admin created:", email, "/ pass:", pass);
+  const users     = readUsers();
+  const saEmail   = process.env.SUPERADMIN_EMAIL    || "superadmin@aiswarm.lab";
+  const saPass    = process.env.SUPERADMIN_PASSWORD || crypto.randomBytes(16).toString("hex");
+  const saName    = process.env.SUPERADMIN_NAME     || "Super Admin";
+
+  // Upsert superadmin — always sync email/password from env (env is source of truth)
+  const saIdx = users.findIndex(u => u.role === "superadmin");
+  if (saIdx >= 0) {
+    // Update existing superadmin credentials from env
+    users[saIdx].email    = saEmail.toLowerCase();
+    users[saIdx].password = bcrypt.hashSync(saPass, 12);
+    users[saIdx].name     = saName;
+    users[saIdx].active   = true;
+    writeUsers(users);
+    console.log("Superadmin synced from env:", saEmail);
+  } else {
+    // Create superadmin
+    users.unshift({ id:crypto.randomUUID(), email:saEmail.toLowerCase(), name:saName,
+      role:"superadmin", password:bcrypt.hashSync(saPass,12), active:true,
+      createdAt:new Date().toISOString(), createdBy:"system", lastLogin:null, loginCount:0,
+      activeSession:null });
+    // Also create default admin on very first boot
+    if (users.length === 1) {
+      const adEmail = process.env.ADMIN_EMAIL    || "admin@aiswarm.lab";
+      const adPass  = process.env.ADMIN_PASSWORD || "Admin2024!";
+      users.push({ id:crypto.randomUUID(), email:adEmail.toLowerCase(), name:"Administrador",
+        role:"admin", password:bcrypt.hashSync(adPass,12), active:true,
+        createdAt:new Date().toISOString(), createdBy:"system", lastLogin:null, loginCount:0,
+        activeSession:null });
+      console.log("Admin created:", adEmail);
+    }
+    writeUsers(users);
+    console.log("Superadmin created:", saEmail);
+  }
 })();
 
 // ── Audit ─────────────────────────────────────────────────────────────────
@@ -191,6 +219,13 @@ http.createServer(async(req,res)=>{
         const admins=users.filter(u=>u.role==="admin"&&u.active).length;
         if(admins<=1)return j400(res,"Debe existir al menos un admin activo");
       }
+      // Superadmin protection — only superadmin can modify superadmin accounts
+      if(users[idx].role==="superadmin"&&p.role!=="superadmin"){
+        res.writeHead(403,{...SEC,"Content-Type":"application/json"});
+        res.end('{"error":"Solo un superadmin puede modificar cuentas superadmin"}');return;
+      }
+      // Prevent promoting to superadmin (env vars only)
+      if(b.role==="superadmin"){res.writeHead(403,{...SEC,"Content-Type":"application/json"});res.end('{"error":"El rol superadmin se gestiona solo desde variables de entorno"}');return;}
       ["name","role","active"].forEach(k=>{if(b[k]!==undefined)users[idx][k]=b[k];});
       if(b.password){if(b.password.length<8)return j400(res,"Mínimo 8 caracteres");users[idx].password=await bcrypt.hash(b.password,12);}
       users[idx].updatedAt=new Date().toISOString();users[idx].updatedBy=p.email;writeUsers(users);
@@ -222,6 +257,7 @@ http.createServer(async(req,res)=>{
     const tid=delMatch[1];
     if(tid===p.id)return j400(res,"No puedes eliminarte a ti mismo");
     const users=readUsers(),idx=users.findIndex(u=>u.id===tid);
+    if(idx>=0&&users[idx].role==="superadmin")return j400(res,"No se puede eliminar la cuenta superadmin");
     if(idx<0)return j404(res);
     const email=users[idx].email; users.splice(idx,1); writeUsers(users);
     audit(p.id,p.email,"USER_DELETED","email:"+email,clientIp);

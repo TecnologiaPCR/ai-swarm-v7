@@ -190,7 +190,7 @@ function AdminPanel({ user, onClose }) {
     else setMsg("❌ "+d.error);
   };
 
-  const ROLE_COLORS = { admin:"#a78bfa", operator:"#10b981", viewer:"#64748b" };
+  const ROLE_COLORS = { superadmin:"#f59e0b", admin:"#a78bfa", operator:"#10b981", viewer:"#64748b" };
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(2,4,8,.95)",zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center",padding:16,fontFamily:"'Nunito',sans-serif"}}>
@@ -245,6 +245,7 @@ function AdminPanel({ user, onClose }) {
                     <label style={{fontSize:10,fontWeight:700,color:"rgba(167,139,250,.6)",letterSpacing:.5,textTransform:"uppercase",display:"block",marginBottom:4}}>Rol</label>
                     <select value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}
                       style={{width:"100%",padding:"9px 12px",borderRadius:10,border:"1px solid rgba(124,106,247,.2)",background:"#080c14",color:"#d4dcf5",fontSize:13,fontFamily:"inherit",boxSizing:"border-box",outline:"none"}}>
+                      {user.role==="superadmin" && <option value="superadmin">Super Admin</option>}
                       <option value="admin">Administrador</option>
                       <option value="operator">Operador</option>
                       <option value="viewer">Viewer</option>
@@ -274,8 +275,9 @@ function AdminPanel({ user, onClose }) {
                         <div style={{fontSize:11,color:"rgba(255,255,255,.35)"}}>{u.email} · {u.loginCount} logins · {u.lastLogin?new Date(u.lastLogin).toLocaleDateString("es-PA"):"nunca"}</div>
                       </div>
                       <select value={u.role} onChange={e=>changeRole(u,e.target.value)}
-                        disabled={u.id===user.id}
-                        style={{padding:"4px 8px",borderRadius:8,border:"1px solid rgba(124,106,247,.25)",background:"#080c14",color:ROLE_COLORS[u.role]||"#d4dcf5",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",outline:"none"}}>
+                        disabled={u.id===user.id || u.role==="superadmin" || (u.role!=="superadmin"&&user.role!=="superadmin"&&u.role==="admin"&&false)}
+                        style={{padding:"4px 8px",borderRadius:8,border:"1px solid rgba(124,106,247,.25)",background:"#080c14",color:ROLE_COLORS[u.role]||"#d4dcf5",fontSize:11,fontWeight:700,cursor:u.role==="superadmin"?"not-allowed":"pointer",fontFamily:"inherit",outline:"none"}}>
+                        {user.role==="superadmin"&&<option value="superadmin">superadmin</option>}
                         <option value="admin">admin</option>
                         <option value="operator">operator</option>
                         <option value="viewer">viewer</option>
@@ -3530,8 +3532,11 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
               <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 12px",borderRadius:999,background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.08)"}}>
                 <span style={{fontSize:14}}>👤</span>
                 <span style={{fontSize:11,color:"rgba(167,139,250,.8)",fontWeight:700}}>{currentUser?.name}</span>
-                <span style={{fontSize:9,padding:"2px 7px",borderRadius:999,background:"rgba(124,106,247,.2)",color:"#a78bfa",fontWeight:800,letterSpacing:.5,textTransform:"uppercase"}}>
-                  {currentUser?.role}
+                <span style={{fontSize:9,padding:"2px 7px",borderRadius:999,
+                  background:currentUser?.role==="superadmin"?"rgba(245,158,11,.2)":"rgba(124,106,247,.2)",
+                  color:currentUser?.role==="superadmin"?"#f59e0b":"#a78bfa",
+                  fontWeight:800,letterSpacing:.5,textTransform:"uppercase"}}>
+                  {currentUser?.role==="superadmin"?"⭐ superadmin":currentUser?.role}
                 </span>
               </div>
               {currentUser?.permissions?.canManageUsers && (
