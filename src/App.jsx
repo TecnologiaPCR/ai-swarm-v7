@@ -2275,7 +2275,8 @@ export default function AISwarm() {
 
   // Config
   const [modelKey, setModelKey]               = useState("sonnet");
-  const [geminiKey, setGeminiKey]             = useState("AIzaSyDKju3lSPlSybOnDowj85omay7Gjb8-wqQ");
+  // Gemini key from environment variable (set VITE_GEMINI_KEY in DO App Platform)
+  const [geminiKey, setGeminiKey]             = useState(import.meta.env.VITE_GEMINI_KEY || "");
   const [synthEnabled, setSynthEnabled]       = useState(false);
   const [selectedAgents, setSelectedAgents]   = useState(() => new Set(AGENTS.map(a => a.id)));
   const [budgetLimit, setBudgetLimit]         = useState(DEFAULT_BUDGET);

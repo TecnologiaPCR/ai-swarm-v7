@@ -1,9 +1,9 @@
-// Static file server for production — no host restrictions
-const http  = require("http");
-const fs    = require("fs");
-const path  = require("path");
-const PORT  = process.env.PORT || 8080;
-const DIST  = path.join(__dirname, "dist");
+// Static file server for production — hardened with security headers
+const http = require("http");
+const fs   = require("fs");
+const path = require("path");
+const PORT = process.env.PORT || 8080;
+const DIST = path.join(__dirname, "dist");
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -18,35 +18,45 @@ const MIME = {
   ".ttf":  "font/ttf",
 };
 
-http.createServer((req, res) => {
-  // Strip query string
-  let urlPath = req.url.split("?")[0];
+const SECURITY_HEADERS = {
+  "X-Content-Type-Options":  "nosniff",
+  "X-Frame-Options":         "DENY",
+  "Referrer-Policy":         "strict-origin-when-cross-origin",
+  "Permissions-Policy":      "geolocation=(), camera=(), microphone=()",
+  "X-XSS-Protection":        "1; mode=block",
+};
 
-  // Resolve file path
+http.createServer((req, res) => {
+  let urlPath = req.url.split("?")[0];
   let filePath = path.join(DIST, urlPath);
 
-  // SPA fallback — serve index.html for any non-file route
+  // Prevent path traversal
+  if (!filePath.startsWith(DIST)) {
+    res.writeHead(403); res.end("Forbidden"); return;
+  }
+
+  // SPA fallback
   if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
     filePath = path.join(DIST, "index.html");
   }
 
-  const ext  = path.extname(filePath).toLowerCase();
-  const mime = MIME[ext] || "application/octet-stream";
+  const ext      = path.extname(filePath).toLowerCase();
+  const mime     = MIME[ext] || "application/octet-stream";
+  const isIndex  = filePath.endsWith("index.html");
+  const isAsset  = urlPath.startsWith("/assets/");
 
   fs.readFile(filePath, (err, data) => {
-    if (err) {
-      res.writeHead(404, { "Content-Type": "text/plain" });
-      res.end("Not found");
-      return;
-    }
-    // Cache headers — assets are hashed, index.html never cached
-    const isIndex = filePath.endsWith("index.html");
+    if (err) { res.writeHead(404); res.end("Not found"); return; }
+
     res.writeHead(200, {
       "Content-Type":  mime,
-      "Cache-Control": isIndex ? "no-cache, no-store, must-revalidate" : "public, max-age=31536000, immutable",
+      "Cache-Control": isAsset
+        ? "public, max-age=31536000, immutable"
+        : "no-cache, no-store, must-revalidate",
+      ...SECURITY_HEADERS,
     });
     res.end(data);
   });
 }).listen(PORT, "0.0.0.0", () => {
-  console.log(`AI Swarm v7 running on http://0.0.0.0:${PORT}`);
+  console.log(`AI Swarm v7 ✅ http://0.0.0.0:${PORT}`);
 });
