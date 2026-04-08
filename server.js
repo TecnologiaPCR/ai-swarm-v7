@@ -394,8 +394,16 @@ http.createServer(async(req,res)=>{
     }
   }
 
-  let fp=path.join(DIST,url);
-  if(!fp.startsWith(DIST)){res.writeHead(403);res.end();return;}
+  // Decode URL and normalize to prevent path traversal (../../etc/passwd)
+  let decodedUrl;
+  try { decodedUrl = decodeURIComponent(url.split("?")[0]); }
+  catch { res.writeHead(400); res.end(); return; }
+  // Reject any path containing .. segments
+  if(decodedUrl.includes("..") || decodedUrl.includes("//")) {
+    res.writeHead(403,{...SEC}); res.end("Forbidden"); return;
+  }
+  let fp=path.join(DIST, decodedUrl);
+  if(!fp.startsWith(DIST+path.sep) && fp !== DIST){res.writeHead(403,{...SEC});res.end("Forbidden");return;}
   if(!fs.existsSync(fp)||fs.statSync(fp).isDirectory()) fp=path.join(DIST,"index.html");
   const ext=path.extname(fp).toLowerCase();
   fs.readFile(fp,(err,data)=>{
