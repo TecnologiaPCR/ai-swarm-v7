@@ -219,13 +219,13 @@ http.createServer(async(req,res)=>{
         const admins=users.filter(u=>u.role==="admin"&&u.active).length;
         if(admins<=1)return j400(res,"Debe existir al menos un admin activo");
       }
+      // Prevent promoting ANYONE to superadmin via API (env vars only, always first)
+      if(b.role==="superadmin"){res.writeHead(403,{...SEC,"Content-Type":"application/json"});res.end('{"error":"El rol superadmin se gestiona solo desde variables de entorno"}');return;}
       // Superadmin protection — only superadmin can modify superadmin accounts
       if(users[idx].role==="superadmin"&&p.role!=="superadmin"){
         res.writeHead(403,{...SEC,"Content-Type":"application/json"});
         res.end('{"error":"Solo un superadmin puede modificar cuentas superadmin"}');return;
       }
-      // Prevent promoting to superadmin (env vars only)
-      if(b.role==="superadmin"){res.writeHead(403,{...SEC,"Content-Type":"application/json"});res.end('{"error":"El rol superadmin se gestiona solo desde variables de entorno"}');return;}
       ["name","role","active"].forEach(k=>{if(b[k]!==undefined)users[idx][k]=b[k];});
       if(b.password){if(b.password.length<8)return j400(res,"Mínimo 8 caracteres");users[idx].password=await bcrypt.hash(b.password,12);}
       users[idx].updatedAt=new Date().toISOString();users[idx].updatedBy=p.email;writeUsers(users);
