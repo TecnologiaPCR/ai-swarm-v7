@@ -33,7 +33,7 @@ function ThemeSwitcher({ theme, setTheme }) {
       borderRadius:999, padding:3,
     }}>
       {opts.map(o => (
-        <button key={o.id} onClick={() => setTheme(o.id)}
+        <button key={o.id} onClick={() => { setTheme(o.id); playSound('themeSwitch'); haptic([10,5,10,5,20]); }}
           title={o.label}
           style={{
             display:"flex", alignItems:"center", gap:4,
@@ -2292,6 +2292,48 @@ function playSound(type) {
     } else if (type === "select") {
       note(ctx, 660, "sine", 0, .06, .1);
       note(ctx, 990, "sine", .03, .07, .07);
+
+    } else if (type === "titleHover") {
+      // Glitchy synth spark — per letter
+      const freq = 400 + Math.random() * 800;
+      note(ctx, freq, "square", 0, .03, .18, 1.5);
+      note(ctx, freq * 1.5, "sine", .02, .04, .12);
+
+    } else if (type === "titleClick") {
+      // Electric burst — all letters activate
+      [261, 329, 415, 523, 659, 784, 1047].forEach((f, i) =>
+        note(ctx, f, "sawtooth", i * .025, .12, .22 - .02 * i, 1.2));
+      note(ctx, 2093, "sine", .18, .3, .15);
+
+    } else if (type === "orbitPing") {
+      // Soft spacey ping when orbit icon passes
+      note(ctx, 1800 + Math.random() * 400, "sine", 0, .06, .08);
+
+    } else if (type === "headerLoad") {
+      // Cinematic intro — low to high sweep
+      note(ctx, 55,  "sawtooth", 0,   .08, .15, 3);
+      note(ctx, 110, "sine",     .1,  .1,  .18, 2);
+      note(ctx, 220, "triangle", .22, .12, .2,  1.8);
+      note(ctx, 440, "sine",     .36, .2,  .22, 1.5);
+      note(ctx, 880, "sine",     .52, .25, .2);
+      note(ctx, 1320,"sine",     .68, .35, .16);
+      note(ctx, 1760,"sine",     .82, .4,  .12);
+      // Sparkle on top
+      [2093, 2637, 3136].forEach((f, i) =>
+        note(ctx, f, "sine", .9 + i * .08, .22, .1 - .02 * i));
+
+    } else if (type === "ringPop") {
+      // Ring expansion — deep resonant pop
+      note(ctx, 80, "sawtooth", 0, .15, .25, .3);
+      note(ctx, 160, "sine", .04, .12, .2, .5);
+      note(ctx, 523, "sine", .08, .1, .15);
+
+    } else if (type === "themeSwitch") {
+      // Morphing whoosh
+      note(ctx, 200, "sine", 0,   .05, .2,  3);
+      note(ctx, 400, "sine", .05, .08, .18, 2);
+      note(ctx, 800, "sine", .1,  .12, .16, 1.5);
+      note(ctx, 1200,"sine", .16, .15, .12);
     }
 
     setTimeout(() => ctx.close(), 3000);
@@ -3077,6 +3119,72 @@ export default function AISwarm() {
         @keyframes heartbeat     { 0%,100%{transform:scale(1)} 15%{transform:scale(1.2)} 30%{transform:scale(1)} 45%{transform:scale(1.12)} 65%{transform:scale(1)} }
         @keyframes numberUp      { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
         @keyframes borderRun     { 0%{background-position:0 0,100% 0,100% 100%,0 100%} 100%{background-position:100% 0,100% 100%,0 100%,0 0} }
+        @keyframes orbitX        { 0%{transform:rotate(0deg) translateX(120px) rotate(0deg)} 100%{transform:rotate(360deg) translateX(120px) rotate(-360deg)} }
+        @keyframes orbitY        { 0%{transform:rotate(0deg) translateY(80px) rotate(0deg)} 100%{transform:rotate(360deg) translateY(80px) rotate(-360deg)} }
+        @keyframes plasmaShift   { 0%,100%{filter:hue-rotate(0deg) brightness(1)} 25%{filter:hue-rotate(45deg) brightness(1.15)} 75%{filter:hue-rotate(-30deg) brightness(1.1)} }
+        @keyframes titleReveal   { 0%{clip-path:inset(0 100% 0 0);opacity:0} 100%{clip-path:inset(0 0% 0 0);opacity:1} }
+        @keyframes glowPulseH    { 0%,100%{text-shadow:0 0 20px rgba(124,58,237,.6),0 0 40px rgba(236,72,153,.3)} 50%{text-shadow:0 0 40px rgba(124,58,237,1),0 0 80px rgba(236,72,153,.6),0 0 120px rgba(245,158,11,.3)} }
+        @keyframes letterDrop    { 0%{opacity:0;transform:translateY(-40px) rotate(-8deg) scale(.6)} 60%{transform:translateY(6px) rotate(2deg) scale(1.1)} 80%{transform:translateY(-3px) scale(.97)} 100%{opacity:1;transform:translateY(0) rotate(0) scale(1)} }
+        @keyframes particleRain  { 0%{transform:translateY(-20px) translateX(0) rotate(0) scale(1);opacity:1} 100%{transform:translateY(120px) translateX(var(--px,0px)) rotate(720deg) scale(0);opacity:0} }
+        @keyframes ringExpand    { 0%{transform:scale(0) rotate(0);opacity:.7} 100%{transform:scale(2.5) rotate(180deg);opacity:0} }
+        @keyframes waveText      { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+        @keyframes starTwinkle   { 0%,100%{opacity:.3;transform:scale(.8)} 50%{opacity:1;transform:scale(1.3)} }
+        @keyframes auraFlow      { 0%{background-position:0% 50%;opacity:.6} 50%{background-position:100% 50%;opacity:.9} 100%{background-position:0% 50%;opacity:.6} }
+        @keyframes rocketShake   { 0%,100%{transform:translateX(0) rotate(0)} 25%{transform:translateX(-3px) rotate(-2deg)} 75%{transform:translateX(3px) rotate(2deg)} }
+
+        /* ══ HEADER EPIC STYLES ══════════════════════════════════════ */
+        .header-aura {
+          position:absolute;inset:-60px;pointer-events:none;z-index:0;
+          background:
+            radial-gradient(ellipse 60% 40% at 50% 60%, rgba(124,58,237,.18) 0%, transparent 60%),
+            radial-gradient(ellipse 40% 30% at 30% 40%, rgba(236,72,153,.12) 0%, transparent 60%),
+            radial-gradient(ellipse 40% 30% at 70% 30%, rgba(245,158,11,.08) 0%, transparent 60%);
+          animation:auraFlow 6s ease-in-out infinite;
+          background-size:200% 200%;
+        }
+        [data-theme="light"] .header-aura { opacity:.4; }
+        [data-theme="mid"] .header-aura {
+          background:
+            radial-gradient(ellipse 60% 40% at 50% 60%, rgba(99,102,241,.2) 0%, transparent 60%),
+            radial-gradient(ellipse 40% 30% at 30% 40%, rgba(6,182,212,.12) 0%, transparent 60%);
+        }
+
+        .header-orbit-ring {
+          position:absolute;top:50%;left:50%;
+          width:280px;height:280px;
+          margin:-140px 0 0 -140px;
+          border:1px solid rgba(124,106,247,.08);
+          border-radius:50%;
+          pointer-events:none;
+          animation:ringExpand 4s ease-out infinite;
+        }
+        .header-orbit-ring:nth-child(2) { animation-delay:1.3s; }
+        .header-orbit-ring:nth-child(3) { animation-delay:2.6s; }
+
+        .orbit-icon {
+          position:absolute;top:50%;left:50%;
+          font-size:20px;
+          transform-origin:0 0;
+          pointer-events:none;
+        }
+
+        .title-letter {
+          display:inline-block;
+          transition:transform .3s cubic-bezier(.34,1.56,.64,1), filter .3s;
+          cursor:default;
+        }
+        .title-letter:hover {
+          transform:translateY(-8px) scale(1.2) rotate(-3deg);
+          filter:brightness(1.4) drop-shadow(0 0 12px currentColor);
+          animation:none !important;
+        }
+
+        .header-particle {
+          position:absolute;
+          pointer-events:none;
+          border-radius:50%;
+          animation:particleRain var(--pd,2s) ease-out var(--pdelay,0s) infinite;
+        }
 
         /* ══════════════════════════════════════════════════════════════
            BASE
@@ -3475,41 +3583,135 @@ export default function AISwarm() {
         <div className="blob blob-5"/>
         <div className="wrap">
 
-          {/* ── HEADER ── */}
-          <div style={{textAlign:"center",marginBottom:32,animation:"fadeUp .7s cubic-bezier(.34,1.56,.64,1) both"}}>
-            {/* Floating icons */}
-            <div style={{position:"relative",height:0,pointerEvents:"none"}}>
-              {["🤖","⚡","🧠","🎯","✨","💡","🚀","🔮"].map((e,i)=>(
-                <span key={i} style={{
-                  position:"absolute",fontSize:18+Math.random()*12,opacity:.25,
-                  left:(10+i*12)+"%",top:(-40+Math.sin(i)*25)+"px",
-                  animation:"float "+(3+i*.7)+"s ease-in-out infinite",
-                  animationDelay:(i*.3)+"s",
-                }}>{e}</span>
+          {/* ── HEADER ÉPICO ── */}
+          <div style={{textAlign:"center",marginBottom:32,position:"relative",overflow:"visible"}}>
+
+            {/* Aura glow behind everything */}
+            <div className="header-aura"/>
+
+            {/* Expanding rings */}
+            {[0,1,2].map(i=>(
+              <div key={i} className="header-orbit-ring" style={{
+                animationDelay:(i*1.33)+"s",
+                borderColor:"rgba(124,106,247,"+(0.06-i*.015)+")",
+                width:(240+i*50)+"px",height:(240+i*50)+"px",
+                margin:"-"+(120+i*25)+"px 0 0 -"+(120+i*25)+"px",
+              }}/>
+            ))}
+
+            {/* Orbiting icons */}
+            <div style={{position:"absolute",top:"50%",left:"50%",width:0,height:0,pointerEvents:"none",zIndex:0}}>
+              {[
+                {icon:"🤖",dur:8,  radius:130,angle:0,   size:22},
+                {icon:"⚡",dur:12, radius:110,angle:72,  size:18},
+                {icon:"🧠",dur:10, radius:140,angle:144, size:20},
+                {icon:"🎯",dur:9,  radius:120,angle:216, size:19},
+                {icon:"✨",dur:11, radius:135,angle:288, size:17},
+                {icon:"🚀",dur:7,  radius:105,angle:45,  size:16},
+                {icon:"🔮",dur:13, radius:145,angle:135, size:21},
+                {icon:"💡",dur:15, radius:115,angle:200, size:18},
+                {icon:"🌊",dur:11, radius:130,angle:320, size:16},
+                {icon:"⚙️",dur:14, radius:120,angle:170, size:17},
+              ].map(({icon,dur,radius,angle,size},i)=>(
+                <span key={i} className="orbit-icon"
+                  onMouseEnter={()=>{ playSound("orbitPing"); haptic([8]); }}
+                  style={{
+                    fontSize:size,
+                    animation:"orbitX "+dur+"s linear infinite",
+                    animationDelay:-(angle/360*dur)+"s",
+                    transformOrigin:(-radius)+"px 0",
+                    marginLeft:-radius,
+                    opacity:.3,
+                    filter:"drop-shadow(0 0 6px #a78bfa)",
+                  }}>
+                  {icon}
+                </span>
               ))}
             </div>
 
-            <div style={{fontSize:9,letterSpacing:7,color:"#a78bfa",fontFamily:"'Syne',sans-serif",fontWeight:800,textTransform:"uppercase",marginBottom:10,opacity:.8,animation:"fadeUp .5s ease both"}}>
-              🤖 AI Swarm Lab · v7 ✨
-            </div>
-            <h1
-              onMouseEnter={e=>{e.currentTarget.style.animation="glitch .3s ease 3,gradFlow 4s ease infinite";}}
-              onMouseLeave={e=>{e.currentTarget.style.animation="gradFlow 4s ease infinite";}}
-              style={{
-                fontSize:"clamp(26px,5vw,46px)",fontWeight:900,margin:"0 0 8px",
-                fontFamily:"'Syne',sans-serif",letterSpacing:"-1.5px",lineHeight:1.1,
-                background:"linear-gradient(135deg,#7c3aed 0%,#a855f7 25%,#ec4899 55%,#f59e0b 80%,#10b981 100%)",
-                backgroundSize:"300% 100%",animation:"gradFlow 4s ease infinite",
-                WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",
-                cursor:"default",userSelect:"none",
-              }}>
-              🚀 ENJAMBRE DE AGENTES IA
-            </h1>
-            <p style={{color:"rgba(167,139,250,.7)",fontSize:13.5,fontWeight:700,margin:"0 0 20px",opacity:.9,animation:"fadeUp .6s ease .1s both"}}>
-              31 agentes especializados · trabajan juntos · te entregan el plan completo ⚡
-            </p>
+            {/* Particle rain */}
+            {Array.from({length:16},(_,i)=>{
+              const colors=["#7c3aed","#ec4899","#f59e0b","#10b981","#0ea5e9","#a78bfa"];
+              const c=colors[i%colors.length];
+              return (
+                <div key={i} className="header-particle" style={{
+                  width:(3+i%3*2)+"px", height:(3+i%3*2)+"px",
+                  background:c, boxShadow:"0 0 6px "+c,
+                  left:(3+i*6)+"%", top:(5+Math.sin(i*0.9)*15)+"%",
+                  "--pd":(2.5+i%4*.7)+"s",
+                  "--pdelay":-(i*.25)+"s",
+                  "--px":(-30+i%5*15)+"px",
+                }}/>
+              );
+            })}
 
-            {/* Stats pills — staggered pop */}
+            {/* Main content above effects */}
+            <div style={{position:"relative",zIndex:2,paddingTop:12}}>
+
+              {/* Badge */}
+              <div
+                onClick={()=>{ playSound("ringPop"); haptic([15,10,15]); }}
+                style={{
+                  display:"inline-flex",alignItems:"center",gap:6,
+                  fontSize:9,letterSpacing:6,color:"var(--accent)",
+                  fontFamily:"'Syne',sans-serif",fontWeight:800,
+                  textTransform:"uppercase",marginBottom:14,
+                  padding:"5px 16px",borderRadius:999,
+                  border:"1px solid var(--border-accent)",
+                  background:"var(--accent-soft)",cursor:"pointer",
+                  animation:"fadeDown .5s ease both",
+                  transition:"all .25s cubic-bezier(.34,1.56,.64,1)",
+                }}
+                onMouseEnter={e=>{ e.currentTarget.style.transform="scale(1.08)"; e.currentTarget.style.boxShadow="0 0 20px var(--accent)55"; playSound("orbitPing"); }}
+                onMouseLeave={e=>{ e.currentTarget.style.transform="scale(1)"; e.currentTarget.style.boxShadow="none"; }}>
+                <span style={{animation:"starTwinkle 1.5s ease-in-out infinite"}}>✦</span>
+                AI SWARM LAB · v7
+                <span style={{animation:"starTwinkle 1.5s ease-in-out infinite .5s"}}>✦</span>
+              </div>
+
+              {/* H1 — letter by letter */}
+              <h1
+                onClick={()=>{ playSound("titleClick"); haptic([20,10,20,10,40,10,60]); }}
+                style={{
+                  fontSize:"clamp(28px,5.5vw,52px)",fontWeight:900,
+                  margin:"0 0 4px",fontFamily:"'Syne',sans-serif",
+                  letterSpacing:"-2px",lineHeight:1.05,
+                  cursor:"pointer",userSelect:"none",
+                  animation:"fadeUp .6s cubic-bezier(.34,1.56,.64,1) .1s both",
+                }}>
+                {"🚀 ENJAMBRE DE AGENTES IA".split("").map((ch,i)=>(
+                  <span key={i} className="title-letter"
+                    onMouseEnter={()=>{ playSound("titleHover"); haptic([5]); }}
+                    style={{
+                      background:"linear-gradient(135deg,#7c3aed 0%,#a855f7 25%,#ec4899 55%,#f59e0b 80%,#10b981 100%)",
+                      backgroundSize:"300% 100%",
+                      animation:"gradFlow "+(3+i*.08)+"s ease infinite, letterDrop .5s cubic-bezier(.34,1.56,.64,1) "+(.02+i*.038)+"s both",
+                      WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",
+                      display:ch===" "?"inline":"inline-block",
+                      minWidth:ch===" "?"0.25em":"auto",
+                    }}>
+                    {ch}
+                  </span>
+                ))}
+              </h1>
+
+              {/* Subtitle wave */}
+              <p style={{color:"var(--text-secondary)",fontSize:13,fontWeight:700,margin:"8px 0 20px",animation:"fadeUp .6s ease .4s both"}}>
+                {["31 agentes","7 fases","3 modelos","plan maestro ⚡"].map((t,i)=>(
+                  <span key={i}>
+                    <span
+                      onMouseEnter={e=>{ e.currentTarget.style.color="var(--accent)"; e.currentTarget.style.transform="translateY(-3px)"; playSound("select"); haptic([5]); }}
+                      onMouseLeave={e=>{ e.currentTarget.style.color=""; e.currentTarget.style.transform=""; }}
+                      style={{cursor:"default",display:"inline-block",transition:"all .2s",animation:"waveText 2s ease-in-out "+(i*.25)+"s infinite"}}>
+                      {t}
+                    </span>
+                    {i<3&&<span style={{color:"var(--border-accent)",margin:"0 6px",opacity:.5}}>·</span>}
+                  </span>
+                ))}
+              </p>
+            </div>{/* /content zIndex:2 */}
+
+{/* Stats pills — staggered pop */}
             <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap",marginBottom:18}}>
               {[["🤖","31","agentes","#7c3aed"],["🎯","7","fases","#ec4899"],["🧠","3","modelos","#f59e0b"],["💾","∞","sesiones","#10b981"],["⚡","síntesis","inteligente","#6366f1"]].map(([emoji,n,l,c],idx)=>(
                 <div key={l} style={{
