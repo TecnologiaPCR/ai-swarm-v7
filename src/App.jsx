@@ -268,93 +268,161 @@ async function addStoredSpend(amount) {
 async function callModel(modelKey, system, userMsg, agentId, geminiKey = "", attempt = 0) {
   const model = MODELS[modelKey] || MODELS.sonnet;
   const maxTokens = AGENT_MAX_TOKENS[agentId] || 1200;
-  const MAX_ATTEMPTS = 5;
-  const RETRYABLE = ["exceeded_limit","rate_limit_error","overloaded_error"];
+  const MAX_ATTEMPTS = 4;
+  const RETRYABLE_ANTHROPIC = ["exceeded_limit","rate_limit_error","overloaded_error"];
 
-  // Detect if running on DO (production) or locally in Claude artifact
-  // In production, use server-side proxy to avoid CORS
+  // Detect production (DO) vs artifact (claude.ai)
   const IS_PROD = typeof window !== "undefined" &&
     !window.location.hostname.includes("claude.ai") &&
     !window.location.hostname.includes("localhost") &&
     window.location.hostname !== "";
 
-  let res;
-  try {
-    if (model.id.startsWith("gemini")) {
-      // ── Gemini path ────────────────────────────────────────────────────────
-      const geminiPayload = {
-        system_instruction: { parts:[{text: system}] },
-        contents:[{role:"user", parts:[{text: userMsg}]}],
-        generationConfig:{ maxOutputTokens: maxTokens, temperature:0.7 },
-      };
+  // ── Anthropic call (used for Sonnet/Haiku AND as Gemini fallback) ──────────
+  const callAnthropic = async () => {
+    // When called as fallback, use haiku for speed/cost
+    const fallbackModel = MODELS.haiku;
+    const payload = {
+      model: fallbackModel.id, max_tokens: maxTokens,
+      system, messages: [{role:"user", content: userMsg}],
+    };
+    let r;
+    if (IS_PROD) {
+      const tok = localStorage.getItem("swarm_token") || "";
+      r = await fetch("/api/proxy/anthropic", {
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":"Bearer "+tok},
+        body: JSON.stringify(payload),
+      });
+    } else {
+      r = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(payload),
+      });
+    }
+    if (!r.ok) {
+      const eb = await r.json().catch(()=>({}));
+      const et = eb?.error?.type || "";
+      const retryable = RETRYABLE_ANTHROPIC.some(t=>et.includes(t)) || r.status===429 || r.status===529;
+      if (retryable && attempt < MAX_ATTEMPTS) {
+        await new Promise(res=>setTimeout(res, Math.min(5000*Math.pow(2,attempt),60000)+Math.random()*2000));
+        return callModel(modelKey, system, userMsg, agentId, geminiKey, attempt+1);
+      }
+      throw new Error(eb?.error?.message || "Error "+r.status);
+    }
+    const d = await r.json();
+    return d.content?.map(b=>b.text||"").join("\n").trim() || "";
+  };
+
+  // ── Gemini path ─────────────────────────────────────────────────────────────
+  if (model.id.startsWith("gemini")) {
+    const geminiPayload = {
+      system_instruction: { parts:[{text: system}] },
+      contents:[{role:"user", parts:[{text: userMsg}]}],
+      generationConfig:{ maxOutputTokens: maxTokens, temperature:0.7 },
+    };
+    try {
+      let res;
       if (IS_PROD) {
-        // Use server-side proxy
-        const _gtok = localStorage.getItem("swarm_token") || "";
+        const tok = localStorage.getItem("swarm_token") || "";
         res = await fetch("/api/proxy/gemini/"+model.id, {
           method:"POST",
-          headers:{"Content-Type":"application/json", "Authorization":"Bearer "+_gtok},
+          headers:{"Content-Type":"application/json","Authorization":"Bearer "+tok},
           body: JSON.stringify(geminiPayload),
         });
       } else {
-        // Direct call (Claude artifact environment)
-        if (!geminiKey) throw new Error("Gemini API key no configurada");
+        if (!geminiKey) throw new Error("GEMINI_QUOTA"); // trigger fallback
         res = await fetch(model.endpoint+"?key="+geminiKey, {
           method:"POST",
           headers:{"Content-Type":"application/json"},
           body: JSON.stringify(geminiPayload),
         });
       }
-      if (!res.ok) {
-        const errBody = await res.json().catch(()=>({}));
-        throw new Error(errBody?.error?.message || "Gemini error " + res.status);
-      }
-      const gData = await res.json();
-      return gData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
 
-    } else {
-      // ── Anthropic path (Sonnet / Haiku) ────────────────────────────────────
-      const anthropicPayload = {
-        model: model.id, max_tokens: maxTokens,
-        system, messages: [{role:"user", content: userMsg}],
-      };
-      if (IS_PROD) {
-        // Use server-side proxy — no API key in browser, no CORS issue
-        const _tok = localStorage.getItem("swarm_token") || "";
-        res = await fetch("/api/proxy/anthropic", {
-          method: "POST",
-          headers: {"Content-Type":"application/json", "Authorization":"Bearer "+_tok},
-          body: JSON.stringify(anthropicPayload),
-        });
-      } else {
-        // Direct call (Claude artifact environment — auto-auth injected)
-        res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {"Content-Type":"application/json"},
-          body: JSON.stringify(anthropicPayload),
-        });
+      if (!res.ok) {
+        const eb = await res.json().catch(()=>({}));
+        const msg = eb?.error?.message || "";
+        // Quota exhausted or billing issue → fall back to Haiku silently
+        const isQuota = res.status===429 || res.status===403 ||
+          msg.toLowerCase().includes("quota") ||
+          msg.toLowerCase().includes("billing") ||
+          msg.toLowerCase().includes("limit");
+        if (isQuota) {
+          console.warn("[Gemini quota] Falling back to Haiku for", agentId);
+          return await callAnthropic();
+        }
+        throw new Error(msg || "Gemini error "+res.status);
       }
+
+      const gData = await res.json();
+      // Check for quota error in successful response body (Gemini can return 200 with error)
+      if (gData?.error) {
+        const gMsg = gData.error.message || "";
+        if (gMsg.toLowerCase().includes("quota") || gMsg.toLowerCase().includes("limit")) {
+          console.warn("[Gemini quota body] Falling back to Haiku for", agentId);
+          return await callAnthropic();
+        }
+        throw new Error(gMsg);
+      }
+      const text = gData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+      if (!text) throw new Error("Gemini returned empty response");
+      return text;
+
+    } catch(e) {
+      // Any Gemini network/quota error → fall back to Haiku
+      const msg = e.message || "";
+      const isFallbackable = msg.includes("quota") || msg.includes("QUOTA") ||
+        msg.includes("limit") || msg.includes("billing") || msg.includes("fetch") ||
+        msg.includes("GEMINI_QUOTA") || msg.includes("Failed to fetch");
+      if (isFallbackable || attempt === 0) {
+        console.warn("[Gemini error] Falling back to Haiku:", msg);
+        return await callAnthropic();
+      }
+      throw e;
+    }
+  }
+
+  // ── Anthropic path (Sonnet / Haiku) ─────────────────────────────────────────
+  const anthropicPayload = {
+    model: model.id, max_tokens: maxTokens,
+    system, messages: [{role:"user", content: userMsg}],
+  };
+  let res;
+  try {
+    if (IS_PROD) {
+      const tok = localStorage.getItem("swarm_token") || "";
+      res = await fetch("/api/proxy/anthropic", {
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":"Bearer "+tok},
+        body: JSON.stringify(anthropicPayload),
+      });
+    } else {
+      res = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(anthropicPayload),
+      });
     }
   } catch(e) {
     if (attempt < MAX_ATTEMPTS) {
-      await new Promise(r => setTimeout(r, Math.min(4000 * Math.pow(2, attempt), 60000)));
-      return callModel(modelKey, system, userMsg, agentId, geminiKey, attempt + 1);
+      await new Promise(r=>setTimeout(r, Math.min(4000*Math.pow(2,attempt),60000)));
+      return callModel(modelKey, system, userMsg, agentId, geminiKey, attempt+1);
     }
     throw e;
   }
 
   if (!res.ok) {
-    const errBody = await res.json().catch(() => ({}));
+    const errBody = await res.json().catch(()=>({}));
     const errType = errBody?.error?.type || "";
-    const isRetryable = RETRYABLE.some(t => errType.includes(t)) || res.status === 429 || res.status === 529;
+    const isRetryable = RETRYABLE_ANTHROPIC.some(t=>errType.includes(t)) || res.status===429 || res.status===529;
     if (isRetryable && attempt < MAX_ATTEMPTS) {
-      const base = Math.min(6000 * Math.pow(2, attempt), 90000);
-      await new Promise(r => setTimeout(r, base + Math.random() * 3000));
-      return callModel(modelKey, system, userMsg, agentId, geminiKey, attempt + 1);
+      await new Promise(r=>setTimeout(r, Math.min(6000*Math.pow(2,attempt),90000)+Math.random()*3000));
+      return callModel(modelKey, system, userMsg, agentId, geminiKey, attempt+1);
     }
-    throw new Error(errBody?.error?.message || "Error " + res.status);
+    throw new Error(errBody?.error?.message || "Error "+res.status);
   }
   const data = await res.json();
-  return data.content?.map(b => b.text || "").join("\n").trim() || "";
+  return data.content?.map(b=>b.text||"").join("\n").trim() || "";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
