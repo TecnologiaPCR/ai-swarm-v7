@@ -3,11 +3,22 @@ import { useState, useEffect, useRef, useCallback } from "react";
 // ─────────────────────────────────────────────────────────────────────────────
 // THEME SYSTEM — dark / mid / light
 // ─────────────────────────────────────────────────────────────────────────────
+// Apply theme immediately (before React paints) to avoid flash
+(function(){
+  try{
+    const t=localStorage.getItem("swarm_theme")||
+      (window.matchMedia("(prefers-color-scheme:light)").matches?"light":"dark");
+    document.documentElement.setAttribute("data-theme",t);
+  }catch{}
+})();
+
 function useTheme() {
   const [theme, setThemeState] = useState(() => {
-    const saved = localStorage.getItem("swarm_theme");
-    if (saved) return saved;
-    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    try{
+      const saved = localStorage.getItem("swarm_theme");
+      if (saved) return saved;
+      return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    }catch{return "dark";}
   });
 
   useEffect(() => {
@@ -33,7 +44,7 @@ function ThemeSwitcher({ theme, setTheme }) {
       borderRadius:999, padding:3,
     }}>
       {opts.map(o => (
-        <button key={o.id} onClick={() => { setTheme(o.id); playSound('themeSwitch'); haptic([10,5,10,5,20]); }}
+        <button key={o.id} onClick={() => { setTheme(o.id); document.documentElement.setAttribute('data-theme',o.id); playSound('themeSwitch'); haptic([10,5,10,5,20]); }}
           title={o.label}
           style={{
             display:"flex", alignItems:"center", gap:4,
@@ -2400,38 +2411,120 @@ function useAuth() {
   return { user, authReady, login, logout };
 }
 
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin, theme, setTheme }) {
   const [email,setEmail]=useState(""); const [pass,setPass]=useState("");
   const [error,setError]=useState(""); const [loading,setLoad]=useState(false);
   const submit=async(e)=>{ e.preventDefault(); setError(""); setLoad(true);
     try{await onLogin(email,pass);}catch(err){setError(err.message);}finally{setLoad(false);} };
+
+  // Resolved colors per theme — no CSS var ambiguity on login screen
+  const isLight = theme==="light";
+  const isMid   = theme==="mid";
+  const bgPage  = isLight?"#f8fafc":isMid?"#0f0f1a":"#020408";
+  const bgCard  = isLight?"#ffffff":isMid?"#161628":"#0d1117";
+  const bgInput = isLight?"#f1f5f9":isMid?"#0d0d1f":"#070b12";
+  const txtLabel= isLight?"#64748b":isMid?"#9fa8da":"rgba(167,139,250,.7)";
+  const txtInput= isLight?"#0f172a":isMid?"#e8eaf6":"#d4dcf5";
+  const txtPH   = isLight?"#94a3b8":isMid?"rgba(159,168,218,.4)":"rgba(255,255,255,.2)";
+  const brdCard = isLight?"#c4b5fd":isMid?"rgba(99,102,241,.4)":"rgba(124,106,247,.35)";
+  const brdInput= isLight?"#e2e8f0":isMid?"rgba(159,168,218,.2)":"rgba(255,255,255,.08)";
+  const brdFocus= isLight?"#7c3aed":isMid?"#6366f1":"rgba(124,106,247,.6)";
+  const shadowCard= isLight?"0 4px 24px rgba(0,0,0,.08)":isMid?"0 4px 32px rgba(0,0,20,.6)":"0 4px 32px rgba(0,0,0,.6)";
+
   return (
-    <div style={{minHeight:"100vh",background:"var(--bg-base)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Nunito',sans-serif",padding:16}}>
-      <div style={{width:"100%",maxWidth:400}}>
+    <div style={{minHeight:"100vh",background:bgPage,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"'Nunito',sans-serif",padding:16}}>
+
+      {/* Theme switcher top-right */}
+      {setTheme && (
+        <div style={{position:"fixed",top:16,right:16,zIndex:100}}>
+          <ThemeSwitcher theme={theme} setTheme={setTheme}/>
+        </div>
+      )}
+
+      <div style={{width:"100%",maxWidth:380}}>
+        {/* Logo */}
         <div style={{textAlign:"center",marginBottom:32}}>
-          <div style={{fontSize:48,marginBottom:8}}>🤖</div>
-          <h1 style={{fontFamily:"'Syne',sans-serif",fontSize:28,fontWeight:900,margin:"0 0 4px",
-            background:"linear-gradient(135deg,#7c3aed,#ec4899)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>
+          <div style={{fontSize:52,marginBottom:10,animation:"bounce .8s ease both"}}>🤖</div>
+          <h1 style={{fontFamily:"'Syne',sans-serif",fontSize:30,fontWeight:900,margin:"0 0 6px",
+            background:"linear-gradient(135deg,#7c3aed,#a855f7,#ec4899)",
+            backgroundSize:"200% 100%",animation:"gradFlow 3s ease infinite",
+            WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",letterSpacing:"-1px"}}>
             AI Swarm Lab
           </h1>
-          <p style={{color:"var(--text-muted)",fontSize:12,margin:0}}>v7 · Acceso seguro</p>
+          <p style={{color:txtLabel,fontSize:12,margin:0,fontWeight:700,letterSpacing:1,textTransform:"uppercase"}}>
+            v7 · Acceso seguro
+          </p>
         </div>
-        <form onSubmit={submit} style={{background:"var(--bg-card)",border:"1px solid var(--border-accent)",borderRadius:20,padding:28,boxShadow:"var(--shadow-card)"}}>
-          {[["Email","email","email",email,"usuario@empresa.com"],["Contraseña","password","pass",pass,"••••••••"]].map(([label,type,key,val,ph])=>(
-            <div key={key} style={{marginBottom:18}}>
-              <label style={{display:"block",fontSize:10,fontWeight:800,color:"var(--text-muted)",letterSpacing:1,textTransform:"uppercase",marginBottom:7}}>{label}</label>
-              <input type={type} value={val} onChange={e=>key==="email"?setEmail(e.target.value):setPass(e.target.value)} required placeholder={ph}
-                style={{width:"100%",boxSizing:"border-box",background:"var(--bg-input)",border:"1px solid var(--border-base)",color:"var(--text-primary)",borderRadius:12,padding:"11px 14px",fontSize:13,fontFamily:"'Nunito',sans-serif"}}/>
+
+        {/* Card */}
+        <div style={{background:bgCard,border:"1px solid "+brdCard,borderRadius:20,padding:28,boxShadow:shadowCard}}>
+          <form onSubmit={submit}>
+
+            {/* Email */}
+            <div style={{marginBottom:16}}>
+              <label style={{display:"block",fontSize:10,fontWeight:800,color:txtLabel,
+                letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>
+                Correo electrónico
+              </label>
+              <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+                required placeholder="usuario@empresa.com" autoComplete="email"
+                style={{width:"100%",boxSizing:"border-box",height:44,
+                  background:bgInput,border:"1.5px solid "+brdInput,
+                  color:txtInput,borderRadius:12,padding:"0 14px",
+                  fontSize:14,fontFamily:"'Nunito',sans-serif",outline:"none",
+                  caretColor:isLight?"#7c3aed":"#a78bfa"}}
+                onFocus={e=>{e.target.style.borderColor=brdFocus;e.target.style.boxShadow="0 0 0 3px "+(isLight?"rgba(124,58,237,.1)":"rgba(124,106,247,.15)");}}
+                onBlur={e=>{e.target.style.borderColor=brdInput;e.target.style.boxShadow="none";}}
+              />
             </div>
-          ))}
-          {error&&<div style={{padding:"10px 14px",marginBottom:16,borderRadius:10,background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",color:"#f87171",fontSize:13,fontWeight:600}}>⚠️ {error}</div>}
-          <button type="submit" disabled={loading}
-            style={{width:"100%",padding:13,borderRadius:14,border:"none",cursor:loading?"not-allowed":"pointer",
-              background:"linear-gradient(135deg,#7c3aed,#9333ea)",color:"#fff",fontSize:14,fontWeight:800,
-              fontFamily:"inherit",opacity:loading?.7:1}}>
-            {loading?"⏳ Ingresando...":"🔐 Ingresar"}
-          </button>
-        </form>
+
+            {/* Password */}
+            <div style={{marginBottom:22}}>
+              <label style={{display:"block",fontSize:10,fontWeight:800,color:txtLabel,
+                letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>
+                Contraseña
+              </label>
+              <input type="password" value={pass} onChange={e=>setPass(e.target.value)}
+                required placeholder="••••••••" autoComplete="current-password"
+                style={{width:"100%",boxSizing:"border-box",height:44,
+                  background:bgInput,border:"1.5px solid "+brdInput,
+                  color:txtInput,borderRadius:12,padding:"0 14px",
+                  fontSize:14,fontFamily:"'Nunito',sans-serif",outline:"none",
+                  caretColor:isLight?"#7c3aed":"#a78bfa"}}
+                onFocus={e=>{e.target.style.borderColor=brdFocus;e.target.style.boxShadow="0 0 0 3px "+(isLight?"rgba(124,58,237,.1)":"rgba(124,106,247,.15)");}}
+                onBlur={e=>{e.target.style.borderColor=brdInput;e.target.style.boxShadow="none";}}
+              />
+            </div>
+
+            {/* Error */}
+            {error && (
+              <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",marginBottom:16,
+                borderRadius:10,background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.3)",
+                color:"#dc2626",fontSize:13,fontWeight:700}}>
+                ⚠️ {error}
+              </div>
+            )}
+
+            {/* Submit */}
+            <button type="submit" disabled={loading}
+              style={{width:"100%",height:46,borderRadius:14,border:"none",
+                cursor:loading?"not-allowed":"pointer",
+                background:"linear-gradient(135deg,#7c3aed,#9333ea,#7c3aed)",
+                backgroundSize:"200% 200%",animation:loading?"none":"gradFlow 3s ease infinite",
+                color:"#fff",fontSize:14,fontWeight:800,
+                fontFamily:"'Nunito',sans-serif",
+                opacity:loading?.65:1,
+                boxShadow:isLight?"0 4px 16px rgba(124,58,237,.3)":"0 4px 20px rgba(124,58,237,.5)",
+                transition:"all .2s",
+                letterSpacing:.3}}>
+              {loading ? "⏳ Ingresando..." : "Ingresar →"}
+            </button>
+          </form>
+        </div>
+
+        <p style={{textAlign:"center",color:txtLabel,fontSize:11,marginTop:20,opacity:.7}}>
+          AI Swarm Lab · Grupo PCR · Panamá
+        </p>
       </div>
     </div>
   );
@@ -2588,16 +2681,20 @@ function AdminPanel({ user, onClose }) {
 export default function App() {
   const { user, authReady, login, logout } = useAuth();
   const [showAdmin, setShowAdmin] = useState(false);
+  // Theme runs here so it applies to LoginScreen too
+  const { theme, setTheme } = useTheme();
+
   if (!authReady) return (
     <div style={{minHeight:"100vh",background:"var(--bg-base)",display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{fontSize:40,animation:"spin 1s linear infinite",display:"inline-block"}}>🤖</div>
     </div>
   );
-  if (!user) return <LoginScreen onLogin={login} />;
+  if (!user) return <LoginScreen onLogin={login} theme={theme} setTheme={setTheme} />;
   return (
     <>
       {showAdmin && <AdminPanel user={user} onClose={()=>setShowAdmin(false)} />}
-      <AISwarm currentUser={user} onLogout={logout} onOpenAdmin={()=>setShowAdmin(true)} />
+      <AISwarm currentUser={user} onLogout={logout} onOpenAdmin={()=>setShowAdmin(true)}
+               theme={theme} setTheme={setTheme} />
     </>
   );
 }
@@ -2605,10 +2702,9 @@ export default function App() {
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
-function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
+function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
   // Core flow
-  const { theme, setTheme } = useTheme();
-
+  // theme/setTheme come from App() wrapper via props
   const [idea, setIdea]               = useState("");
   const [step, setStep]               = useState("input");
   const [questions, setQuestions]     = useState([]);
@@ -3447,7 +3543,8 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
         /* ══════════════════════════════════════════════════════════════
            BASE
         ══════════════════════════════════════════════════════════════ */
-        html, body { margin:0; padding:0; background:var(--bg-base); }
+        html, body { margin:0; padding:0; background:var(--bg-base); color:var(--text-primary); }
+        * { box-sizing:border-box; }
         .sp {
           width:14px; height:14px;
           border:2.5px solid var(--border-base);
@@ -3470,7 +3567,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
         ══════════════════════════════════════════════════════════════ */
         .root {
           background:var(--bg-base);
-          min-height:400px;
+          min-height:100vh;
           font-family:'Nunito',system-ui,sans-serif;
           color:var(--text-primary);
           position:relative;
@@ -3721,28 +3818,32 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
         /* ══════════════════════════════════════════════════════════════
            INPUTS
         ══════════════════════════════════════════════════════════════ */
-        textarea, input[type=text], input[type=password], input[type=email] {
+        textarea, input[type=text], input[type=password], input[type=email], select {
           color:var(--text-primary);
           background:var(--bg-input);
           border:1px solid var(--border-base);
           border-radius:12px;
-          font-family:'Fira Code',monospace;
+          font-family:'Nunito',sans-serif;
           font-size:13px;
-          line-height:1.7;
+          line-height:1.6;
           height:42px;
-          padding:11px 14px;
+          padding:0 14px;
           box-sizing:border-box;
-          transition:all .25s cubic-bezier(.34,1.56,.64,1);
+          transition:border-color .2s, box-shadow .2s, background .2s;
         }
-        textarea { height:auto; min-height:42px; }
-        textarea:focus, input:focus {
+        textarea { height:auto; min-height:80px; padding:11px 14px; }
+        textarea:focus, input:focus, select:focus {
           outline:none;
           border-color:var(--border-accent) !important;
           box-shadow:var(--input-focus-shadow) !important;
           background:var(--input-focus-bg) !important;
-          transform:scale(1.002);
         }
-        textarea::placeholder, input::placeholder { color:var(--text-muted); }
+        textarea::placeholder, input::placeholder { color:var(--text-muted); opacity:1; }
+        [data-theme="light"] textarea::placeholder,
+        [data-theme="light"] input::placeholder { color:#94a3b8; opacity:1; }
+        [data-theme="mid"] textarea::placeholder,
+        [data-theme="mid"] input::placeholder   { color:rgba(159,168,218,.45); opacity:1; }
+        select option { background:var(--bg-card); color:var(--text-primary); }
 
         /* ══════════════════════════════════════════════════════════════
            SCROLLBAR
@@ -3922,22 +4023,25 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
                 }}
                 onMouseEnter={e=>{ e.currentTarget.style.transform="scale(1.08)"; e.currentTarget.style.boxShadow="0 0 20px var(--accent)55"; playSound("orbitPing"); }}
                 onMouseLeave={e=>{ e.currentTarget.style.transform="scale(1)"; e.currentTarget.style.boxShadow="none"; }}>
-                <span style={{animation:"starTwinkle 1.5s ease-in-out infinite"}}>✦</span>
-                AI SWARM LAB · v7
-                <span style={{animation:"starTwinkle 1.5s ease-in-out infinite .5s"}}>✦</span>
+                <span style={{animation:"starTwinkle 1.5s ease-in-out infinite",display:"inline-block"}}>✦</span>
+                <span>AI SWARM LAB · v7</span>
+                <span style={{animation:"starTwinkle 1.5s ease-in-out infinite .5s",display:"inline-block"}}>✦</span>
               </div>
 
               {/* H1 — letter by letter */}
               <h1
                 onClick={()=>{ playSound("titleClick"); haptic([20,10,20,10,40,10,60]); }}
                 style={{
-                  fontSize:"clamp(28px,5.5vw,52px)",fontWeight:900,
+                  fontSize:"clamp(22px,4.2vw,44px)",fontWeight:900,
                   margin:"0 0 4px",fontFamily:"'Syne',sans-serif",
-                  letterSpacing:"-2px",lineHeight:1.05,
+                  letterSpacing:"-1px",lineHeight:1.1,
                   cursor:"pointer",userSelect:"none",
+                  whiteSpace:"nowrap",
                   animation:"fadeUp .6s cubic-bezier(.34,1.56,.64,1) .1s both",
                 }}>
-                {"🚀 ENJAMBRE DE AGENTES IA".split("").map((ch,i)=>(
+                {/* Rocket prefix — not split to avoid ??  */}
+                <span style={{display:"inline-block",marginRight:8,animation:"rocketShake 3s ease-in-out infinite"}}>🚀</span>
+                {"ENJAMBRE DE AGENTES IA".split("").map((ch,i)=>(
                   <span key={i} className="title-letter"
                     onMouseEnter={()=>{ playSound("titleHover"); haptic([5]); }}
                     style={{
@@ -3946,7 +4050,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
                       animation:"gradFlow "+(3+i*.08)+"s ease infinite, letterDrop .5s cubic-bezier(.34,1.56,.64,1) "+(.02+i*.038)+"s both",
                       WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",
                       display:ch===" "?"inline":"inline-block",
-                      minWidth:ch===" "?"0.25em":"auto",
+                      minWidth:ch===" "?"0.3em":"auto",
                     }}>
                     {ch}
                   </span>
