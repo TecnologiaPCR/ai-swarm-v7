@@ -101,12 +101,14 @@ const MODELS = {
 // PER-AGENT CONFIG
 // ─────────────────────────────────────────────────────────────────────────────
 const AGENT_MAX_TOKENS = {
-  // Critical output agents get more tokens for complete artifacts
-  architect:3200,dba:3200,prompt_eng:3200,devops:3000,deploy_eng:3000,tech_writer:3000,
-  security:2400,api_integrator:2400,qa:2400,chaos:2200,bi:2200,
-  ml:2000,i18n:2000,dpo:2000,uiux:2000,copywriter:2000,
-  cx:1800,growth:1800,pm:1800,ba:1800,revenue:1600,performance:1600,
-  orchestrator:4000,
+  // All agents get generous output limits for complete, professional artifacts
+  architect:4000,dba:4000,prompt_eng:4000,devops:3500,deploy_eng:3500,tech_writer:3500,
+  security:3200,api_integrator:3200,qa:3200,chaos:3000,bi:3000,
+  ml:3000,i18n:3000,dpo:3000,uiux:3000,copywriter:3000,
+  cx:2800,growth:2800,pm:2800,ba:2800,revenue:2800,performance:2800,
+  disruptor:3000,product_owner:3000,manual_writer:3200,roadmap_eng:2800,post_launch:2800,
+  maintenance:3000,legal:2400,research:2400,prompt_lib:2400,
+  orchestrator:6000,
   legal:1400,research:1400,prompt_lib:1400,maintenance:2400,
   product_owner:2200,manual_writer:2400,roadmap_eng:2000,post_launch:1800,disruptor:3200,
 };
@@ -134,38 +136,38 @@ const AGENT_READS_FROM = {
 };
 
 const AGENTS = [
-  {id:"pm",name:"Project Manager",icon:"📋",color:"#3B82F6",desc:"Clasifica, prioriza y planifica"},
-  {id:"ba",name:"Business Analyst",icon:"🔍",color:"#8B5CF6",desc:"Requerimientos y criterios de aceptación"},
-  {id:"revenue",name:"Revenue Strategist",icon:"💰",color:"#16A34A",desc:"ROI, monetización e ingresos"},
-  {id:"architect",name:"Arquitecto",icon:"🏗️",color:"#EC4899",desc:"Arquitectura técnica completa"},
-  {id:"prompt_eng",name:"Prompt Engineer",icon:"⚡",color:"#F59E0B",desc:"Prompts para vibe coding"},
-  {id:"dba",name:"DBA / Data Eng.",icon:"🗄️",color:"#06B6D4",desc:"Esquemas y estrategia de datos"},
-  {id:"api_integrator",name:"API Integrator",icon:"🔌",color:"#0EA5E9",desc:"Integraciones y contratos de API"},
-  {id:"security",name:"Ciberseguridad",icon:"🛡️",color:"#EF4444",desc:"Controles y auditoría OWASP"},
-  {id:"uiux",name:"UI/UX Designer",icon:"🎨",color:"#A855F7",desc:"Interfaces y experiencia"},
-  {id:"cx",name:"CX Strategist",icon:"🌟",color:"#F472B6",desc:"Journey completo del cliente"},
-  {id:"copywriter",name:"Copywriter IA",icon:"✍️",color:"#FB923C",desc:"Copy que convierte"},
-  {id:"growth",name:"Growth Hacker",icon:"📈",color:"#22C55E",desc:"Adquisición y conversión"},
-  {id:"devops",name:"DevOps / SRE",icon:"🚀",color:"#10B981",desc:"CI/CD e infraestructura"},
-  {id:"performance",name:"Performance Eng.",icon:"⏱️",color:"#0891B2",desc:"Core Web Vitals y caching"},
+  {id:"pm",name:"Project Manager",icon:"📋",color:"#3B82F6",desc:"Clasifica la idea, define prioridad y construye el plan de ejecución con hitos reales"},
+  {id:"ba",name:"Business Analyst",icon:"🔍",color:"#8B5CF6",desc:"Extrae requerimientos funcionales, escribe user stories y define criterios de aceptación medibles"},
+  {id:"revenue",name:"Revenue Strategist",icon:"💰",color:"#16A34A",desc:"Calcula ROI, modela pricing y encuentra oportunidades de monetización que el equipo no vio"},
+  {id:"architect",name:"Arquitecto",icon:"🏗️",color:"#EC4899",desc:"Diseña la arquitectura técnica completa: stack, modelo de datos, APIs e integraciones"},
+  {id:"prompt_eng",name:"Prompt Engineer",icon:"⚡",color:"#F59E0B",desc:"Escribe los prompts estructurados que generarán TODO el código del proyecto via vibe coding"},
+  {id:"dba",name:"DBA / Data Eng.",icon:"🗄️",color:"#06B6D4",desc:"Define el esquema de base de datos, migraciones, índices y estrategia de replicación"},
+  {id:"api_integrator",name:"API Integrator",icon:"🔌",color:"#0EA5E9",desc:"Diseña contratos de API, integraciones con sistemas legacy y estrategia de autenticación"},
+  {id:"security",name:"Ciberseguridad",icon:"🛡️",color:"#EF4444",desc:"Audita amenazas OWASP, define controles de seguridad y asegura compliance con Ley 81"},
+  {id:"uiux",name:"UI/UX Designer",icon:"🎨",color:"#A855F7",desc:"Especifica el flujo de usuario, componentes visuales y sistema de diseño mobile-first"},
+  {id:"cx",name:"CX Strategist",icon:"🌟",color:"#F472B6",desc:"Mapea el customer journey completo e identifica friction points y momentos de deleite"},
+  {id:"copywriter",name:"Copywriter IA",icon:"✍️",color:"#FB923C",desc:"Escribe copy persuasivo, CTAs, microcopy y templates de email/WhatsApp que convierten"},
+  {id:"growth",name:"Growth Hacker",icon:"📈",color:"#22C55E",desc:"Define el funnel de conversión, A/B tests e identifica growth loops de adquisición"},
+  {id:"devops",name:"DevOps / SRE",icon:"🚀",color:"#10B981",desc:"Diseña el pipeline CI/CD, infraestructura como código y plan de rollback y recovery"},
+  {id:"performance",name:"Performance Eng.",icon:"⏱️",color:"#0891B2",desc:"Optimiza Core Web Vitals, diseña estrategia de caching y presupuesto de performance"},
+  {id:"i18n",name:"i18n & a11y",icon:"🌐",color:"#6366F1",desc:"Arquitectura multiidioma, manejo de RTL y cumplimiento WCAG 2.1 AA de accesibilidad"},
   {id:"i18n",name:"i18n & a11y",icon:"🌐",color:"#6366F1",desc:"Internacionalización y accesibilidad"},
-  {id:"i18n",name:"i18n & a11y",icon:"🌐",color:"#6366F1",desc:"Internacionalización y accesibilidad"},
-  {id:"ml",name:"ML Scientist",icon:"🧠",color:"#F97316",desc:"Modelos predictivos y análisis"},
-  {id:"bi",name:"BI Analyst",icon:"📊",color:"#6366F1",desc:"Dashboards e inteligencia"},
-  {id:"qa",name:"QA / Validador",icon:"✅",color:"#14B8A6",desc:"Testing y validación"},
-  {id:"chaos",name:"Chaos Engineer",icon:"💥",color:"#DC2626",desc:"Resiliencia y planes de fallo"},
-  {id:"prompt_lib",name:"Prompt Librarian",icon:"📚",color:"#A16207",desc:"Catálogo y versionado de prompts"},
-  {id:"dpo",name:"Data Privacy",icon:"🔐",color:"#7C3AED",desc:"Compliance regulación local / GDPR"},
-  {id:"legal",name:"Legal",icon:"⚖️",color:"#78716C",desc:"Riesgos y cumplimiento"},
-  {id:"research",name:"Investigación IA",icon:"🔬",color:"#D946EF",desc:"Tecnologías emergentes"},
-  {id:"disruptor",name:"Innovador Disruptivo",icon:"🚀💥",color:"#FF4D00",desc:"Blue Ocean · 10x thinking"},
-  {id:"deploy_eng",name:"Deploy Engineer",icon:"🚢",color:"#0EA5E9",desc:"Runbooks de go-live"},
-  {id:"maintenance",name:"Mantenimiento",icon:"🔧",color:"#64748B",desc:"Ops, alertas y SLAs"},
-  {id:"product_owner",name:"Product Owner",icon:"🎯",color:"#8B5CF6",desc:"Roadmap y backlog"},
-  {id:"tech_writer",name:"Docs Técnica",icon:"📖",color:"#0284C7",desc:"README, ADRs, API docs"},
-  {id:"manual_writer",name:"Manuales Usuario",icon:"📝",color:"#7C3AED",desc:"Tutoriales paso a paso"},
-  {id:"roadmap_eng",name:"Roadmap Eng.",icon:"🗺️",color:"#059669",desc:"Versioning y evolución"},
-  {id:"post_launch",name:"Post-Launch",icon:"🏁",color:"#D97706",desc:"Retro y métricas post-deploy"},
+  {id:"ml",name:"ML Scientist",icon:"🧠",color:"#F97316",desc:"Evalúa si el problema se beneficia de ML y propone modelos, features y métricas de éxito"},
+  {id:"bi",name:"BI Analyst",icon:"📊",color:"#6366F1",desc:"Identifica KPIs, diseña dashboards y escribe las queries SQL de extracción de datos"},
+  {id:"qa",name:"QA / Validador",icon:"✅",color:"#14B8A6",desc:"Define la estrategia de testing, escribe casos de prueba y detecta edge cases críticos"},
+  {id:"chaos",name:"Chaos Engineer",icon:"💥",color:"#DC2626",desc:"Mapea puntos de fallo, diseña circuit breakers y crea runbooks de recuperación de desastres"},
+  {id:"prompt_lib",name:"Prompt Librarian",icon:"📚",color:"#A16207",desc:"Cataloga, versiona y optimiza la biblioteca de prompts con naming convention y métricas"},
+  {id:"dpo",name:"Data Privacy",icon:"🔐",color:"#7C3AED",desc:"Mapea flujos de datos personales, define bases legales y asegura compliance GDPR/Ley 81"},
+  {id:"legal",name:"Legal",icon:"⚖️",color:"#78716C",desc:"Evalúa riesgos legales, propiedad intelectual del código IA y licencias de APIs externas"},
+  {id:"research",name:"Investigación IA",icon:"🔬",color:"#D946EF",desc:"Evalúa tecnologías emergentes, APIs de IA y decide qué construir vs comprar vs integrar"},
+  {id:"disruptor",name:"Innovador Disruptivo",icon:"🚀💥",color:"#FF4D00",desc:"Rompe los supuestos del negocio y propone modelos 10x que la competencia no anticipó"},
+  {id:"deploy_eng",name:"Deploy Engineer",icon:"🚢",color:"#0EA5E9",desc:"Construye el runbook de go-live, automatiza el deploy y define el plan de contingencia"},
+  {id:"maintenance",name:"Mantenimiento",icon:"🔧",color:"#64748B",desc:"Define alertas, SLAs, on-call y plan de deuda técnica para los primeros 6 meses de ops"},
+  {id:"product_owner",name:"Product Owner",icon:"🎯",color:"#8B5CF6",desc:"Prioriza el backlog, define el roadmap por valor de negocio y gestiona deuda técnica"},
+  {id:"tech_writer",name:"Docs Técnica",icon:"📖",color:"#0284C7",desc:"Genera README, ADRs, documentación de API y guías de arquitectura para el equipo"},
+  {id:"manual_writer",name:"Manuales Usuario",icon:"📝",color:"#7C3AED",desc:"Crea tutoriales paso a paso, FAQs y guías de usuario para cada perfil de la app"},
+  {id:"roadmap_eng",name:"Roadmap Eng.",icon:"🗺️",color:"#059669",desc:"Planifica versiones, define SemVer, estrategia de feature flags y deprecación de APIs"},
+  {id:"post_launch",name:"Post-Launch",icon:"🏁",color:"#D97706",desc:"Analiza métricas post-deploy, conduce la retro y define el plan de mejora continua"},
 ];
 
 const PHASES = [
@@ -2184,7 +2186,7 @@ function AgentChip({ agent, state }) {
                : "0 1px 3px rgba(0,0,0,.06)";
 
   return (
-    <div style={{
+    <div title={agent.desc||""} style={{
       display:"inline-flex",alignItems:"center",gap:5,
       padding:"5px 11px",borderRadius:999,fontSize:11,fontWeight:700,
       whiteSpace:"nowrap",background:bg,border:"1.5px solid "+border,
@@ -2194,7 +2196,7 @@ function AgentChip({ agent, state }) {
       fontFamily:"'Nunito',sans-serif",letterSpacing:"-.2px",
     }}>
       <span style={{fontSize:13,lineHeight:1,animation:isActive?"wiggle 1s ease-in-out infinite":"none"}}>{agent.icon}</span>
-      <span>{agent.name}</span>
+      <span style={{fontWeight:700}}>{agent.name}</span>
       {isDone  && <span style={{fontSize:11}}>✅</span>}
       {isFail  && <span style={{fontSize:11}}>❌</span>}
       {isActive && <span className="sp" style={{borderTopColor:"#c084fc",borderColor:"rgba(124,106,247,.2)"}}/>}
@@ -2209,13 +2211,16 @@ function AgentResult({ agent, result, defaultOpen, onRetry }) {
   const hasSynth = !!result.synth && !result.isError;
   const display  = tab==="synth" && hasSynth ? result.synth : tab==="initial" ? result.text : (result.synth || result.text);
   const borderCol = result.isError ? "rgba(239,68,68,.2)" : "rgba(124,106,247,.2)";
-  const bgHeader  = open ? (result.isError?"rgba(239,68,68,.06)":"#0d1117") : "#fff";
+  const bgHeader  = open ? (result.isError?"rgba(239,68,68,.06)":"var(--bg-card)") : "var(--bg-card)";
   return (
-    <div className="phase-block" style={{marginBottom:8,borderRadius:16,overflow:"hidden",border:"2px solid "+borderCol,background:"#0d1117",transition:"all .3s cubic-bezier(.34,1.56,.64,1)",boxShadow:open?"0 6px 24px "+agent.color+"22,0 2px 8px rgba(0,0,0,.06)":"0 1px 4px rgba(0,0,0,.05)",animation:"cardIn .4s cubic-bezier(.34,1.56,.64,1) both"}}>
+    <div className="phase-block" style={{marginBottom:8,borderRadius:16,overflow:"hidden",border:"2px solid "+borderCol,background:"var(--bg-card)",transition:"all .3s cubic-bezier(.34,1.56,.64,1)",boxShadow:open?"0 6px 24px "+agent.color+"22,0 2px 8px rgba(0,0,0,.06)":"0 1px 4px rgba(0,0,0,.05)",animation:"cardIn .4s cubic-bezier(.34,1.56,.64,1) both"}}>
       <button onClick={()=>setOpen(!open)} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"10px 14px",border:"none",cursor:"pointer",background:bgHeader,fontFamily:"inherit",transition:"background .18s"}}>
         <div style={{width:4,height:22,borderRadius:2,flexShrink:0,background:result.isError?"#f87171":agent.color,boxShadow:open?"0 0 8px "+agent.color+"88":"none",transition:"box-shadow .25s"}}/>
         <span style={{fontSize:16,lineHeight:1}}>{agent.icon}</span>
-        <span style={{color:result.isError?"#dc2626":agent.color,flex:1,fontSize:12,fontWeight:800,fontFamily:"'Nunito',sans-serif",textAlign:"left"}}>{agent.name}</span>
+        <div style={{flex:1,textAlign:"left",minWidth:0}}>
+          <div style={{color:result.isError?"#dc2626":agent.color,fontSize:12,fontWeight:800,fontFamily:"'Nunito',sans-serif",lineHeight:1.3}}>{agent.name}</div>
+          {agent.desc && <div style={{fontSize:10,color:"var(--text-muted)",fontWeight:500,marginTop:2,lineHeight:1.3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{agent.desc}</div>}
+        </div>
         {hasSynth && <span style={{fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:999,background:"rgba(16,185,129,.1)",color:"#10b981",letterSpacing:.5}}>✨ SYNTH</span>}
         {result.isError && <span style={{fontSize:9,fontWeight:700,padding:"3px 8px",borderRadius:999,background:"rgba(239,68,68,.12)",color:"#dc2626"}}>❌ ERROR</span>}
         {!result.isError && <span style={{fontSize:10,color:"var(--text-muted)",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{agent.desc}</span>}
@@ -2896,21 +2901,53 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
     setMasterPlanLoading(true);
     try {
       // Build a comprehensive context with ALL agent outputs
-      // Cap each agent output and total context to avoid 400 token errors
-      const agentOutputs = Object.entries(allResults)
-        .filter(([,r])=>!r.isError && r.text)
-        .map(([id,r])=>{
-          const ag = AGENTS.find(a=>a.id===id);
-          const best = (r.synth || r.text || "").trim();
-          return "=== "+ag?.icon+" "+ag?.name+" ===\n"+best.slice(0,900);
-        }).join("\n\n");
+      // Smart synthesis: group by phase, extract KEY decisions per agent
+      // This preserves quality while staying within API context limits
+      const PHASE_LABELS = {
+        intake:      "FASE 0 · INTAKE (PM, BA, Revenue)",
+        design:      "FASE 1 · DISEÑO (Arquitecto, UX, DBA, APIs, CX)",
+        vibe:        "FASE 2 · VIBE CODING (Prompts, Copy, DevOps, i18n)",
+        quality:     "FASE 3 · CALIDAD (QA, Seguridad, Performance, Chaos)",
+        intelligence:"FASE 4 · INTELIGENCIA (ML, BI, Growth, Research)",
+        governance:  "FASE 5 · GOBERNANZA (DPO, Legal, Prompt Lib)",
+        lifecycle:   "FASE 6 · LIFECYCLE (Deploy, PO, Docs, Roadmap)",
+      };
 
-      // Keep total user message under ~18K chars to stay within context limits
-      const ideaSnippet = enriched.slice(0, 1500);
+      // Build phase-grouped summary — 1000 chars per agent, organized by phase
+      let phasedContext = "";
+      let totalChars = 0;
+      const MAX_TOTAL = 20000;
+
+      for (const [phaseId, phaseLabel] of Object.entries(PHASE_LABELS)) {
+        const phase = PHASES.find(p => p.id === phaseId);
+        if (!phase) continue;
+        const phaseAgents = phase.agents.filter(id => allResults[id] && !allResults[id].isError);
+        if (!phaseAgents.length) continue;
+
+        let phaseText = "\n\n── "+phaseLabel+" ──\n";
+        for (const aid of phaseAgents) {
+          if (totalChars >= MAX_TOTAL) break;
+          const ag = AGENTS.find(a => a.id === aid);
+          const r  = allResults[aid];
+          const best = (r.synth || r.text || "").trim();
+          // Extract first 800 chars — the most important output is always first
+          const snippet = best.slice(0, 800);
+          phaseText += "\n["+ag?.icon+" "+ag?.name+"]\n"+snippet+"\n";
+          totalChars += snippet.length;
+        }
+        phasedContext += phaseText;
+      }
+
+      const ideaSnippet = enriched.slice(0, 2000);
+      const successCount = Object.values(allResults).filter(r => !r.isError).length;
+
       const orchestratorMsg = ideaSnippet
-        + "\n\n══ OUTPUTS DE LOS "+Object.keys(allResults).length+" AGENTES ══\n"
-        + agentOutputs.slice(0, 16000)
-        + "\n\nSintetiza en el plan maestro ejecutable.";
+        + "\n\n══════════════════════════════════════"
+        + "\nANÁLISIS COMPLETO DE "+successCount+" AGENTES ESPECIALIZADOS:"
+        + "══════════════════════════════════════"
+        + phasedContext
+        + "\n\n══════════════════════════════════════\n"
+        + "Con base en TODO lo anterior, genera el PLAN MAESTRO DE EJECUCIÓN completo.";
 
       const plan = await callModel(
         modelKey, ORCHESTRATOR_SYSTEM, orchestratorMsg, "orchestrator", geminiKey
