@@ -2,18 +2,19 @@
   "name": "ai-swarm-v7",
   "version": "7.0.0",
   "private": true,
-  "description": "AI Swarm Lab — 31 agentes especializados",
+  "description": "AI Swarm Lab v7 — 31 agentes especializados",
   "scripts": {
     "dev":     "vite --port 3000",
     "build":   "vite build",
-    "preview": "vite preview --port 3000",
-    "start":   "vite preview --port ${PORT:-3000} --host 0.0.0.0"
+    "preview": "vite preview --port 8080 --host 0.0.0.0",
+    "start":   "node server.js"
   },
   "dependencies": {
     "react":                "^18.3.1",
     "react-dom":            "^18.3.1",
     "vite":                 "^5.4.0",
-    "@vitejs/plugin-react": "^4.3.1"
+    "@vitejs/plugin-react": "^4.3.1",
+    "serve":                "^14.2.4"
   },
   "engines": {
     "node": ">=20.0.0"
