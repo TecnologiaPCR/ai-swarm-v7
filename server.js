@@ -215,16 +215,20 @@ http.createServer(async(req,res)=>{
       const tid=updMatch[1],b=await body(req),users=readUsers(),idx=users.findIndex(u=>u.id===tid);
       if(idx<0)return j404(res);
       if(b.active===false&&tid===p.id)return j400(res,"No puedes desactivarte a ti mismo");
-      if(b.role&&b.role!=="admin"&&users[idx].role==="admin"){
+      // 3. Ensure at least one admin remains (skip if target is already superadmin)
+      if(b.role&&b.role!=="admin"&&b.role!=="superadmin"&&users[idx].role==="admin"){
         const admins=users.filter(u=>u.role==="admin"&&u.active).length;
         if(admins<=1)return j400(res,"Debe existir al menos un admin activo");
       }
-      // Prevent promoting ANYONE to superadmin via API (env vars only, always first)
-      if(b.role==="superadmin"){res.writeHead(403,{...SEC,"Content-Type":"application/json"});res.end('{"error":"El rol superadmin se gestiona solo desde variables de entorno"}');return;}
-      // Superadmin protection — only superadmin can modify superadmin accounts
+      // 1. Prevent promoting ANYONE to superadmin via API (env vars only)
+      if(b.role==="superadmin"){
+        res.writeHead(403,{...SEC,"Content-Type":"application/json"});
+        res.end(JSON.stringify({error:"El rol superadmin se gestiona solo desde variables de entorno"}));return;
+      }
+      // 2. Superadmin protection — only superadmin can modify superadmin accounts
       if(users[idx].role==="superadmin"&&p.role!=="superadmin"){
         res.writeHead(403,{...SEC,"Content-Type":"application/json"});
-        res.end('{"error":"Solo un superadmin puede modificar cuentas superadmin"}');return;
+        res.end(JSON.stringify({error:"Solo un superadmin puede modificar cuentas superadmin"}));return;
       }
       ["name","role","active"].forEach(k=>{if(b[k]!==undefined)users[idx][k]=b[k];});
       if(b.password){if(b.password.length<8)return j400(res,"Mínimo 8 caracteres");users[idx].password=await bcrypt.hash(b.password,12);}
