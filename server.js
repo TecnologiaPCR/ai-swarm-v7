@@ -394,16 +394,22 @@ http.createServer(async(req,res)=>{
     }
   }
 
-  // Decode URL and normalize to prevent path traversal (../../etc/passwd)
+  // Decode URL and normalize to prevent path traversal
   let decodedUrl;
   try { decodedUrl = decodeURIComponent(url.split("?")[0]); }
-  catch { res.writeHead(400); res.end(); return; }
-  // Reject any path containing .. segments
-  if(decodedUrl.includes("..") || decodedUrl.includes("//")) {
+  catch { res.writeHead(400,{...SEC}); res.end("Bad Request"); return; }
+
+  // Reject encoded dots/slashes and explicit traversal
+  if(decodedUrl.includes("..") || decodedUrl.includes("//") ||
+     url.includes("%2e") || url.includes("%2f") || url.includes("%5c")) {
     res.writeHead(403,{...SEC}); res.end("Forbidden"); return;
   }
-  let fp=path.join(DIST, decodedUrl);
-  if(!fp.startsWith(DIST+path.sep) && fp !== DIST){res.writeHead(403,{...SEC});res.end("Forbidden");return;}
+
+  // Build real path and verify it stays within /dist
+  let fp = path.resolve(DIST, decodedUrl.replace(/^\//, ""));
+  if(fp !== DIST && !fp.startsWith(DIST + path.sep)){
+    res.writeHead(403,{...SEC}); res.end("Forbidden"); return;
+  }
   if(!fs.existsSync(fp)||fs.statSync(fp).isDirectory()) fp=path.join(DIST,"index.html");
   const ext=path.extname(fp).toLowerCase();
   fs.readFile(fp,(err,data)=>{
