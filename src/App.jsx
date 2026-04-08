@@ -286,9 +286,10 @@ async function callModel(modelKey, system, userMsg, agentId, geminiKey = "", att
       };
       if (IS_PROD) {
         // Use server-side proxy
+        const _gtok = localStorage.getItem("swarm_token") || "";
         res = await fetch("/api/proxy/gemini/"+model.id, {
           method:"POST",
-          headers:{"Content-Type":"application/json"},
+          headers:{"Content-Type":"application/json", "Authorization":"Bearer "+_gtok},
           body: JSON.stringify(geminiPayload),
         });
       } else {
@@ -315,9 +316,10 @@ async function callModel(modelKey, system, userMsg, agentId, geminiKey = "", att
       };
       if (IS_PROD) {
         // Use server-side proxy — no API key in browser, no CORS issue
+        const _tok = localStorage.getItem("swarm_token") || "";
         res = await fetch("/api/proxy/anthropic", {
           method: "POST",
-          headers: {"Content-Type":"application/json"},
+          headers: {"Content-Type":"application/json", "Authorization":"Bearer "+_tok},
           body: JSON.stringify(anthropicPayload),
         });
       } else {
