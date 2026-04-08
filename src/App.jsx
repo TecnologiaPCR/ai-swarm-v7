@@ -1550,13 +1550,22 @@ function ExportModal({ content, filename, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERVIEW SYSTEM
 // ─────────────────────────────────────────────────────────────────────────────
-const INTERVIEW_SYSTEM = `Eres el entrevistador del AI Swarm Lab.
-Tu tarea: analizar el requerimiento y generar preguntas que permitan a los agentes producir código y artefactos 100% ejecutables sin ambigüedad.
-Genera 3-6 preguntas. Prioriza: tipo de proyecto, tech stack, base de datos, integraciones externas, usuarios objetivo.
-RESPONDE SOLO JSON. Sin markdown, sin texto extra, sin backticks.
-[{"id":"q1","question":"pregunta concreta","type":"select|multiselect|text","options":["Op1","Op2"],"why":"impacto en el codigo"}]
-Para type text, options=[].`;
+const INTERVIEW_SYSTEM = `Eres el entrevistador senior del AI Swarm Lab.
+MISIÓN: Analizar el requerimiento y generar las preguntas EXACTAS que eliminarán toda ambigüedad para que 31 agentes IA produzcan código ejecutable y artefactos listos para producción.
 
+REGLAS ESTRICTAS:
+- Genera entre 4 y 7 preguntas — ni más ni menos
+- Cada pregunta debe cambiar fundamentalmente cómo los agentes diseñarán la solución
+- Prioriza: tech stack exacto, base de datos, integraciones externas, usuarios objetivo, escala, restricciones
+- Las opciones deben ser concretas (nombres reales de tecnologías, no genéricas)
+- NO hagas preguntas cuya respuesta sea obvia del contexto
+- Siempre incluye al menos 1 pregunta de type "text" para contexto libre
+- Para select/multiselect, incluye siempre la opción "Otro / lo defino yo"
+- Minimum 3, maximum 6 options per select/multiselect question
+
+RESPONDE SOLO JSON VÁLIDO. Sin markdown, sin backticks, sin texto extra.
+[{"id":"q1","question":"pregunta concreta","type":"select|multiselect|text","options":["Op1","Op2","Otro / lo defino yo"],"why":"impacto directo en arquitectura y código"}]
+Para type text, options debe ser [].`;
 // Auto-detect: infer project type and stack from the idea before launching
 const AUTO_DETECT_SYSTEM = `Eres un arquitecto de software. Analiza el requerimiento y extrae metadatos técnicos.
 RESPONDE SOLO JSON válido, sin markdown, sin texto extra:
@@ -2826,6 +2835,351 @@ export default function App() {
   );
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INTERVIEW SCREEN — Pre-flight questions before swarm starts
+// ─────────────────────────────────────────────────────────────────────────────
+function InterviewScreen({ idea, questions, loading, onConfirm, onBack, onSkip }) {
+  const [answers, setAnswers] = useState({});
+  const [freeText, setFreeText] = useState({}); // always-available free text per question
+
+  const setAns = (id, val) => setAnswers(p => ({ ...p, [id]: val }));
+  const setFree = (id, val) => setFreeText(p => ({ ...p, [id]: val }));
+
+  // Build enriched answers merging selection + free text
+  const buildAnswers = () => {
+    const merged = {};
+    questions.forEach(q => {
+      const sel = answers[q.id];
+      const free = (freeText[q.id] || "").trim();
+      if (q.type === "text") {
+        merged[q.id] = (sel || free || "").trim();
+      } else if (q.type === "multiselect") {
+        const arr = Array.isArray(sel) ? sel : [];
+        merged[q.id] = free ? [...arr, free].join(", ") : arr.join(", ");
+      } else {
+        // select — combine choice + optional free text override
+        merged[q.id] = free || sel || "";
+      }
+    });
+    return merged;
+  };
+
+  const answeredCount = questions.filter(q => {
+    const sel = answers[q.id];
+    const free = freeText[q.id];
+    return (sel && (Array.isArray(sel) ? sel.length > 0 : sel.trim())) || (free && free.trim());
+  }).length;
+
+  const pct = questions.length > 0 ? Math.round(answeredCount / questions.length * 100) : 0;
+
+  return (
+    <div style={{
+      minHeight:"100vh", background:"var(--bg-base)",
+      display:"flex", flexDirection:"column", alignItems:"center",
+      justifyContent:"flex-start", padding:"32px 16px 80px",
+      fontFamily:"'Nunito',sans-serif",
+    }}>
+      <div style={{width:"100%", maxWidth:680}}>
+
+        {/* Header */}
+        <div style={{textAlign:"center", marginBottom:28}}>
+          <div style={{fontSize:36, marginBottom:8, animation:"bounce .6s ease both"}}>🎤</div>
+          <h2 style={{fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:900,
+            margin:"0 0 6px", color:"var(--text-primary)",letterSpacing:"-0.5px"}}>
+            Preguntas de clarificación
+          </h2>
+          <p style={{color:"var(--text-muted)", fontSize:12, margin:"0 0 16px"}}>
+            Responde para que los 31 agentes produzcan artefactos 100% ejecutables
+          </p>
+          {/* Idea recap */}
+          <div style={{padding:"10px 16px", borderRadius:10, background:"var(--bg-surface-1)",
+            border:"1px solid var(--border-base)", fontSize:12,
+            color:"var(--text-secondary)", textAlign:"left", fontStyle:"italic"}}>
+            <span style={{color:"var(--accent)", fontWeight:700, fontStyle:"normal"}}>Idea: </span>
+            {idea.length > 180 ? idea.slice(0,180)+"…" : idea}
+          </div>
+        </div>
+
+        {/* Loading state */}
+        {loading && (
+          <div style={{textAlign:"center", padding:"40px 0"}}>
+            <div className="sp" style={{width:24,height:24,margin:"0 auto 12px"}}/>
+            <div style={{color:"var(--text-muted)", fontSize:13}}>Analizando tu requerimiento…</div>
+          </div>
+        )}
+
+        {/* Questions */}
+        {!loading && questions.length > 0 && (
+          <div>
+            {/* Progress */}
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center",
+              marginBottom:16, fontSize:11, color:"var(--text-muted)"}}>
+              <span>{answeredCount}/{questions.length} respondidas</span>
+              <span style={{color:"var(--accent)", fontWeight:700}}>{pct}% completo</span>
+            </div>
+            <div className="prog-track" style={{marginBottom:24,height:6}}>
+              <div className="prog-fill" style={{width:pct+"%"}}/>
+            </div>
+
+            {questions.map((q, qi) => {
+              const isSel   = q.type === "select";
+              const isMulti = q.type === "multiselect";
+              const isText  = q.type === "text";
+              const selArr  = isMulti ? (answers[q.id] || []) : [];
+              const hasAns  = (() => {
+                const s = answers[q.id]; const f = freeText[q.id];
+                return (s && (Array.isArray(s)?s.length>0:s.trim())) || (f && f.trim());
+              })();
+
+              return (
+                <div key={q.id||qi} style={{
+                  marginBottom:20, padding:16, borderRadius:16,
+                  background:"var(--bg-card)",
+                  border:"1.5px solid "+(hasAns ? "var(--accent)" : "var(--border-base)"),
+                  transition:"border-color .2s",
+                  boxShadow: hasAns ? "0 0 0 3px var(--accent-soft)" : "none",
+                  animation:"cardIn .4s cubic-bezier(.34,1.56,.64,1) both",
+                  animationDelay:(qi*.05)+"s",
+                }}>
+                  {/* Question text */}
+                  <div style={{display:"flex", alignItems:"flex-start", gap:8, marginBottom:10}}>
+                    <span style={{
+                      display:"inline-flex", alignItems:"center", justifyContent:"center",
+                      width:22, height:22, borderRadius:999, flexShrink:0, marginTop:1,
+                      background: hasAns ? "var(--accent)" : "var(--bg-surface-2)",
+                      color: hasAns ? "#fff" : "var(--text-muted)",
+                      fontSize:10, fontWeight:800, transition:"all .2s",
+                    }}>{hasAns ? "✓" : (qi+1)}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13, fontWeight:700, color:"var(--text-primary)",
+                        lineHeight:1.4, marginBottom:4}}>{q.question}</div>
+                      {q.why && <div style={{fontSize:10, color:"var(--text-muted)",
+                        fontStyle:"italic"}}>{q.why}</div>}
+                    </div>
+                  </div>
+
+                  {/* Options for select/multiselect */}
+                  {(isSel || isMulti) && q.options?.length > 0 && (
+                    <div style={{display:"flex", flexWrap:"wrap", gap:6, marginBottom:10}}>
+                      {q.options.map((opt, oi) => {
+                        const active = isSel
+                          ? answers[q.id] === opt
+                          : selArr.includes(opt);
+                        return (
+                          <button key={oi} onClick={() => {
+                            if (isSel) setAns(q.id, active ? "" : opt);
+                            else setAns(q.id, active
+                              ? selArr.filter(x=>x!==opt)
+                              : [...selArr, opt]);
+                          }} style={{
+                            padding:"7px 14px", borderRadius:10, cursor:"pointer",
+                            fontFamily:"inherit", fontSize:12, fontWeight:600,
+                            border:"1.5px solid "+(active ? "var(--accent)" : "var(--border-base)"),
+                            background: active ? "var(--accent-soft)" : "var(--bg-surface-1)",
+                            color: active ? "var(--accent)" : "var(--text-secondary)",
+                            transition:"all .15s cubic-bezier(.34,1.56,.64,1)",
+                            transform: active ? "scale(1.03)" : "scale(1)",
+                          }}>{opt}</button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Always-available free text */}
+                  <div>
+                    <div style={{fontSize:10, color:"var(--text-muted)", marginBottom:4,
+                      fontWeight:600, letterSpacing:.5, textTransform:"uppercase"}}>
+                      {isText ? "Tu respuesta" : "O escribe tu propia respuesta"}
+                    </div>
+                    <textarea
+                      value={freeText[q.id] || (isText ? answers[q.id] || "" : "")}
+                      onChange={e => {
+                        if (isText) setAns(q.id, e.target.value);
+                        else setFree(q.id, e.target.value);
+                      }}
+                      placeholder={isText
+                        ? "Escribe tu respuesta aquí…"
+                        : "Agrega detalle adicional o escribe tu propia opción…"}
+                      rows={2}
+                      style={{
+                        width:"100%", boxSizing:"border-box",
+                        background:"var(--bg-input)", border:"1px solid var(--border-base)",
+                        borderRadius:10, padding:"9px 12px",
+                        color:"var(--text-primary)", fontSize:12,
+                        fontFamily:"'Nunito',sans-serif", resize:"vertical",
+                        outline:"none", height:"auto", minHeight:60,
+                        transition:"border-color .2s",
+                      }}
+                      onFocus={e => e.target.style.borderColor="var(--border-accent)"}
+                      onBlur={e => e.target.style.borderColor="var(--border-base)"}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Actions */}
+            <div style={{display:"flex", gap:10, marginTop:8, flexWrap:"wrap"}}>
+              <button className="btn btn-launch" style={{flex:"1 1 auto", justifyContent:"center"}}
+                onClick={() => onConfirm(buildAnswers())}>
+                ⚡ Lanzar enjambre ({questions.length} respuestas)
+              </button>
+              <button className="btn btn-out" onClick={() => onSkip({})}
+                style={{flex:"0 0 auto", fontSize:12}}>
+                Saltar preguntas →
+              </button>
+              <button className="btn btn-ghost" onClick={onBack}
+                style={{flex:"0 0 auto", fontSize:12}}>
+                ← Editar idea
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* No questions generated — go straight to swarm */}
+        {!loading && questions.length === 0 && (
+          <div style={{textAlign:"center", padding:"30px 0"}}>
+            <div style={{fontSize:32, marginBottom:12}}>✅</div>
+            <div style={{color:"var(--text-primary)", fontSize:14, fontWeight:700, marginBottom:8}}>
+              Idea clara — listo para lanzar
+            </div>
+            <div style={{color:"var(--text-muted)", fontSize:12, marginBottom:24}}>
+              No se necesitan aclaraciones adicionales
+            </div>
+            <div style={{display:"flex", gap:10, justifyContent:"center"}}>
+              <button className="btn btn-launch" onClick={() => onConfirm({})}>
+                ⚡ Lanzar enjambre
+              </button>
+              <button className="btn btn-ghost" onClick={onBack}>← Editar idea</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AGENT QUESTION MODAL — Mid-swarm pause for clarification
+// ─────────────────────────────────────────────────────────────────────────────
+function AgentQuestionModal({ agentName, agentIcon, questions, onSubmit }) {
+  const [answers, setAnswers] = useState({});
+  const [freeText, setFreeText] = useState({});
+
+  const allAnswered = questions.every(q => {
+    const s = answers[q.id]; const f = freeText[q.id];
+    return (s && (Array.isArray(s)?s.length>0:s.trim())) || (f && f.trim());
+  });
+
+  const buildAnswers = () => {
+    const merged = {};
+    questions.forEach(q => {
+      const sel = answers[q.id];
+      const free = (freeText[q.id] || "").trim();
+      if (q.type === "text") merged[q.id] = free || sel || "";
+      else if (q.type === "multiselect") {
+        const arr = Array.isArray(sel) ? sel : [];
+        merged[q.id] = free ? [...arr, free].join(", ") : arr.join(", ");
+      } else merged[q.id] = free || sel || "";
+    });
+    return merged;
+  };
+
+  return (
+    <div style={{
+      position:"fixed", inset:0, background:"rgba(2,4,8,.88)", zIndex:9500,
+      display:"flex", alignItems:"center", justifyContent:"center",
+      padding:16, fontFamily:"'Nunito',sans-serif",
+      animation:"fadeUp .3s ease both",
+    }}>
+      <div style={{
+        width:"100%", maxWidth:560, maxHeight:"85vh", overflowY:"auto",
+        background:"var(--bg-card)", border:"2px solid var(--border-accent)",
+        borderRadius:20, padding:24,
+        boxShadow:"0 0 60px rgba(124,106,247,.2)",
+      }}>
+        <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:18}}>
+          <span style={{fontSize:26}}>{agentIcon}</span>
+          <div>
+            <div style={{fontSize:14, fontWeight:800, color:"var(--accent)",
+              fontFamily:"'Syne',sans-serif"}}>{agentName}</div>
+            <div style={{fontSize:11, color:"var(--text-muted)"}}>
+              necesita más contexto para continuar
+            </div>
+          </div>
+          <div style={{marginLeft:"auto", animation:"pulse 1.5s infinite",
+            fontSize:11, color:"#fbbf24", fontWeight:700}}>
+            ⏸ Enjambre pausado
+          </div>
+        </div>
+
+        {questions.map((q, qi) => {
+          const isSel=q.type==="select", isMulti=q.type==="multiselect";
+          const selArr=isMulti?(answers[q.id]||[]):[];
+          return (
+            <div key={q.id||qi} style={{marginBottom:16}}>
+              <div style={{fontSize:12,fontWeight:700,color:"var(--text-primary)",
+                marginBottom:6,lineHeight:1.4}}>{q.question}</div>
+              {(isSel||isMulti) && q.options?.length > 0 && (
+                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+                  {q.options.map((opt,oi)=>{
+                    const active=isSel?answers[q.id]===opt:selArr.includes(opt);
+                    return (
+                      <button key={oi} onClick={()=>{
+                        if(isSel) setAnswers(p=>({...p,[q.id]:active?"":opt}));
+                        else setAnswers(p=>({...p,[q.id]:active?selArr.filter(x=>x!==opt):[...selArr,opt]}));
+                      }} style={{
+                        padding:"6px 12px",borderRadius:8,cursor:"pointer",
+                        fontFamily:"inherit",fontSize:11,fontWeight:600,
+                        border:"1.5px solid "+(active?"var(--accent)":"var(--border-base)"),
+                        background:active?"var(--accent-soft)":"var(--bg-surface-1)",
+                        color:active?"var(--accent)":"var(--text-secondary)",
+                        transition:"all .15s",
+                      }}>{opt}</button>
+                    );
+                  })}
+                </div>
+              )}
+              <textarea
+                value={freeText[q.id]||(q.type==="text"?answers[q.id]||"":"")}
+                onChange={e=>{
+                  if(q.type==="text") setAnswers(p=>({...p,[q.id]:e.target.value}));
+                  else setFreeText(p=>({...p,[q.id]:e.target.value}));
+                }}
+                placeholder={q.type==="text"?"Tu respuesta…":"Agrega contexto adicional…"}
+                rows={2}
+                style={{
+                  width:"100%",boxSizing:"border-box",background:"var(--bg-input)",
+                  border:"1px solid var(--border-base)",borderRadius:10,
+                  padding:"8px 12px",color:"var(--text-primary)",fontSize:12,
+                  fontFamily:"'Nunito',sans-serif",resize:"vertical",
+                  outline:"none",minHeight:50,
+                }}
+                onFocus={e=>e.target.style.borderColor="var(--border-accent)"}
+                onBlur={e=>e.target.style.borderColor="var(--border-base)"}
+              />
+            </div>
+          );
+        })}
+
+        <div style={{display:"flex",gap:8,marginTop:16}}>
+          <button className="btn btn-launch"
+            style={{flex:"1 1 auto",justifyContent:"center"}}
+            onClick={()=>onSubmit(buildAnswers())}>
+            ▶ Continuar enjambre
+          </button>
+          <button className="btn btn-ghost"
+            style={{flex:"0 0 auto",fontSize:11}}
+            onClick={()=>onSubmit({})}>
+            Saltar →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2835,6 +3189,9 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
   const [idea, setIdea]               = useState("");
   const [step, setStep]               = useState("input");
   const [questions, setQuestions]     = useState([]);
+  const [interviewLoading, setInterviewLoading] = useState(false);
+  const [agentQuestions, setAgentQuestions]     = useState(null);  // mid-swarm pause
+  const agentQResolveRef = useRef(null);  // resolves when user answers agent questions
   const [answers, setAnswers]         = useState({});
   const [enrichedIdea, setEnrichedIdea] = useState("");
   const [results, setResults]         = useState({});
@@ -2935,14 +3292,26 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
   // ── Build enriched idea (idea + any refine answers) ─────────────────────────
   const buildEnrichedIdea = useCallback((withAnswers = true) => {
     let s = "REQUERIMIENTO:\n" + idea.trim();
-    if (withAnswers && questions.length > 0 && Object.keys(answers).length > 0) {
-      s += "\n\nCONTEXTO ADICIONAL:";
-      questions.forEach(q => {
-        const a = answers[q.id];
-        if (a && (Array.isArray(a) ? a.length > 0 : a.trim().length > 0)) {
-          s += "\n- " + q.question + "\n  → " + (Array.isArray(a) ? a.join(", ") : a);
+    if (withAnswers && Object.keys(answers).length > 0) {
+      const hasRealAnswers = Object.values(answers).some(a =>
+        a && (Array.isArray(a) ? a.length > 0 : String(a).trim().length > 0));
+      if (hasRealAnswers) {
+        s += "\n\nCONTEXTO ACLARADO POR EL USUARIO:";
+        // If we have question objects, use them for context
+        if (questions.length > 0) {
+          questions.forEach(q => {
+            const a = answers[q.id];
+            if (a && (Array.isArray(a) ? a.length > 0 : String(a).trim().length > 0)) {
+              s += "\n- " + q.question + "\n  → " + (Array.isArray(a) ? a.join(", ") : a);
+            }
+          });
+        } else {
+          // Flat answers from interview without question objects
+          Object.entries(answers).forEach(([k, v]) => {
+            if (v && String(v).trim()) s += "\n- " + k + ": " + v;
+          });
         }
-      });
+      }
     }
     // Inject real credentials/config so agents produce executable code
     s += buildStackContext(stackConfig);
@@ -3139,6 +3508,22 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
     playSound("error"); haptic([20,10,20]);
   }, []);
 
+  // Mid-swarm agent questions — pauses execution until user answers
+  const askAgentQuestions = useCallback(async (agentId, questions) => {
+    return new Promise(resolve => {
+      setAgentQuestions({ agentId, questions, answers: {} });
+      agentQResolveRef.current = (answers) => {
+        setAgentQuestions(null);
+        agentQResolveRef.current = null;
+        resolve(answers);
+      };
+    });
+  }, []);
+
+  const submitAgentAnswers = useCallback((answers) => {
+    if (agentQResolveRef.current) agentQResolveRef.current(answers);
+  }, []);
+
   const approvePhase = useCallback(() => {
     if (phaseApprovalRef.current) {
       phaseApprovalRef.current();
@@ -3150,7 +3535,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
 
   // ── executeLaunch (must be before requestLaunch) ──────────────────────────
   const executeLaunch = useCallback(async (mode, agentList, estimatedCost) => {
-    setShowBudgetModal(false);
+    setShowBudgetModal(false); setInterviewLoading(false);
     setMasterPlan(null); setAutoDetect(null); setPhaseApproval(null);
 
     const enriched = buildEnrichedIdea();
@@ -3158,7 +3543,6 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
     setStep("running");
     playSound("launch"); haptic([40, 20, 40]);
 
-    loadRefineQuestions();
     runAutoDetect(enriched);
 
     setResults({}); setCompletedAgents(new Set()); setFailedAgents(new Set());
@@ -3215,15 +3599,26 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
   }, [buildEnrichedIdea, synthEnabled, runInitialPass, runSynthesisPass,
       idea, modelKey, elapsed, waitForPhaseApproval, loadRefineQuestions, runAutoDetect]);
 
-  const requestLaunch = useCallback((mode="full") => {
+  const requestLaunch = useCallback(async (mode="full") => {
     if (!idea.trim()) return;
     const agentList = mode==="lite" ? LITE_CORE.filter(id=>selectedAgents.has(id)) : [...selectedAgents];
     const cost = estimateCost(agentList, modelKey, mode==="full"&&synthEnabled);
     setCostEstimate(cost);
-    const needsConfirm = (monthlySpend+cost.total)>MONTHLY_LIMIT; // only warn when approaching monthly limit
-    if (needsConfirm) { setPendingLaunch({mode,agentList}); setShowBudgetModal(true); }
-    else executeLaunch(mode, agentList, cost.total);
-  }, [idea, selectedAgents, modelKey, synthEnabled, monthlySpend, executeLaunch]);
+
+    // ── Pre-flight interview: generate questions BEFORE starting ──────────
+    setInterviewLoading(true);
+    setStep("interviewing");
+    setQuestions([]); setAnswers({});
+    try {
+      const raw = await callModel(modelKey, INTERVIEW_SYSTEM, idea.trim(), "pm", geminiKey);
+      const parsed = parseInterviewJSON(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) setQuestions(parsed);
+    } catch { /* silent — proceed without questions */ }
+    setInterviewLoading(false);
+
+    // Store pending launch so user can confirm after answering
+    setPendingLaunch({mode, agentList, cost: cost.total});
+  }, [idea, selectedAgents, modelKey, synthEnabled, geminiKey, monthlySpend, executeLaunch]);
 
   const runDeploy = useCallback(async () => {
     if (deployRunning) return;
@@ -3272,7 +3667,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
   }, [enrichedIdea, modelKey, geminiKey]);
 
   const reset = () => {
-    setStep("input"); setIdea(""); setQuestions([]); setAnswers({}); setResults({});
+    setStep("input"); setIdea(""); setQuestions([]); setAnswers({}); setInterviewLoading(false); setAgentQuestions(null); setResults({});
     setCompletedAgents(new Set()); setFailedAgents(new Set()); setActiveAgents(new Set());
     setSynthAgents(new Set()); setError(null); setInterviewRound(1); setEnrichedIdea("");
     setSynthPhase(false); allResultsRef.current = {};
@@ -4078,7 +4473,39 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
         }
       `}</style>
 
-      <div className="root">
+      {/* ── INTERVIEW SCREEN (pre-flight questions) ── */}
+      {step === "interviewing" && (
+        <InterviewScreen
+          idea={idea}
+          questions={questions}
+          loading={interviewLoading}
+          onConfirm={(answeredMap) => {
+            // Merge answers into state then launch
+            setAnswers(answeredMap);
+            const { mode, agentList, cost } = pendingLaunch || { mode:"full", agentList:[...selectedAgents], cost:0 };
+            const needsConfirm = (monthlySpend + (cost||0)) > MONTHLY_LIMIT;
+            if (needsConfirm) { setShowBudgetModal(true); }
+            else executeLaunch(mode, agentList, cost || 0);
+          }}
+          onBack={() => { setStep("input"); setInterviewLoading(false); }}
+          onSkip={() => {
+            const { mode, agentList, cost } = pendingLaunch || { mode:"full", agentList:[...selectedAgents], cost:0 };
+            executeLaunch(mode, agentList, cost || 0);
+          }}
+        />
+      )}
+
+      {/* ── AGENT QUESTION MODAL (mid-swarm pause) ── */}
+      {agentQuestions && (
+        <AgentQuestionModal
+          agentName={AGENTS.find(a=>a.id===agentQuestions.agentId)?.name || agentQuestions.agentId}
+          agentIcon={AGENTS.find(a=>a.id===agentQuestions.agentId)?.icon || "🤖"}
+          questions={agentQuestions.questions}
+          onSubmit={submitAgentAnswers}
+        />
+      )}
+
+      <div className="root" style={{display: step==="interviewing" ? "none" : undefined}}>
         {showConfetti && (
           <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:9999,overflow:"hidden"}}>
             {Array.from({length:80}).map((_,i)=>{
@@ -4340,7 +4767,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
 
               {/* Step indicator */}
               <div style={{display:"flex",gap:6,marginBottom:20,justifyContent:"center",alignItems:"center"}}>
-                {[{l:"💡 Idea",active:step==="input"},{l:"⚡ Enjambre",active:step==="running"},{l:"🎯 Resultados",active:step==="done"}].map((s,i)=>(
+                {[{l:"💡 Idea",active:step==="input"},{l:"🎤 Preguntas",active:step==="interviewing"},{l:"⚡ Enjambre",active:step==="running"},{l:"🎯 Resultados",active:step==="done"}].map((s,i)=>(
                   <div key={i} style={{display:"flex",alignItems:"center",gap:6}}>
                     <div style={{
                       padding:"7px 16px",borderRadius:999,
@@ -4423,7 +4850,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
                     <div className="divider"/>
 
                     <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-                      <button className="btn btn-launch" onClick={()=>{requestLaunch("full");playSound("launch");haptic([40,15,40]);}}
+                      <button className="btn btn-launch" onClick={()=>{requestLaunch("full");haptic([40,15,40]);}}
                         disabled={!idea.trim()||selectedAgents.size===0}
                         style={{flex:"1 1 auto",justifyContent:"center",fontSize:15}}>
                         🚀 Lanzar enjambre · {selectedAgents.size} agentes
@@ -4603,8 +5030,8 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
                     })}
                   </div>
 
-                  {/* ── REFINE PANEL — questions load async while swarm runs ── */}
-                  {questions.length>0 && (step==="running"||step==="done") && (
+                  {/* ── REFINE PANEL — disabled, replaced by pre-flight interview ── */}
+                  {false && questions.length>0 && (step==="running"||step==="done") && (
                     <div style={{marginBottom:14,padding:"14px 16px",borderRadius:14,background:"rgba(124,106,247,.05)",border:"1px solid rgba(124,106,247,.18)",animation:"fadeUp .4s ease"}}>
                       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
                         <div style={{width:4,height:18,borderRadius:2,background:"#a78bfa",boxShadow:"0 0 8px #7c3aed",flexShrink:0}}/>
