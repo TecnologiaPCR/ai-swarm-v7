@@ -1,6 +1,330 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AUTH LAYER
+// ─────────────────────────────────────────────────────────────────────────────
+function useAuth() {
+  const [user, setUser]       = useState(null);
+  const [authReady, setReady] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem("swarm_token");
+    if (!token) { setReady(true); return; }
+    fetch("/api/auth/me", { headers:{ Authorization:"Bearer "+token } })
+      .then(r => r.ok ? r.json() : null)
+      .then(u => { if (u) setUser(u); else localStorage.removeItem("swarm_token"); })
+      .catch(() => localStorage.removeItem("swarm_token"))
+      .finally(() => setReady(true));
+  }, []);
+
+  const login = async (email, password) => {
+    const r = await fetch("/api/auth/login", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ email, password }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "Error de autenticación");
+    localStorage.setItem("swarm_token", d.token);
+    setUser(d.user);
+    return d.user;
+  };
+
+  const logout = async () => {
+    const token = localStorage.getItem("swarm_token");
+    if (token) fetch("/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+token}}).catch(()=>{});
+    localStorage.removeItem("swarm_token");
+    setUser(null);
+  };
+
+  return { user, authReady, login, logout };
+}
+
+// ── Login Screen ─────────────────────────────────────────────────────────────
+function LoginScreen({ onLogin }) {
+  const [email, setEmail]   = useState("");
+  const [pass,  setPass]    = useState("");
+  const [error, setError]   = useState("");
+  const [loading, setLoad]  = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError(""); setLoad(true);
+    try { await onLogin(email, pass); }
+    catch(err) { setError(err.message); }
+    finally { setLoad(false); }
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:"#020408",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Nunito',sans-serif",padding:16}}>
+      <div style={{width:"100%",maxWidth:400}}>
+        {/* Logo */}
+        <div style={{textAlign:"center",marginBottom:32}}>
+          <div style={{fontSize:48,marginBottom:8}}>🤖</div>
+          <h1 style={{fontFamily:"'Syne',sans-serif",fontSize:28,fontWeight:900,margin:"0 0 4px",
+            background:"linear-gradient(135deg,#7c3aed,#ec4899)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>
+            AI Swarm Lab
+          </h1>
+          <p style={{color:"rgba(167,139,250,.5)",fontSize:12,margin:0}}>v7 · Acceso seguro</p>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={submit} style={{background:"#0d1117",border:"1px solid rgba(124,106,247,.25)",borderRadius:20,padding:28,boxShadow:"0 0 40px rgba(124,106,247,.1)"}}>
+          <div style={{marginBottom:18}}>
+            <label style={{display:"block",fontSize:11,fontWeight:800,color:"rgba(167,139,250,.7)",letterSpacing:1,textTransform:"uppercase",marginBottom:7}}>
+              Email
+            </label>
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} required
+              placeholder="usuario@empresa.com"
+              style={{width:"100%",padding:"11px 14px",borderRadius:12,border:"1px solid rgba(124,106,247,.25)",
+                background:"#080c14",color:"#d4dcf5",fontSize:14,fontFamily:"inherit",boxSizing:"border-box",outline:"none"}}
+              onFocus={e=>e.target.style.borderColor="rgba(124,106,247,.6)"}
+              onBlur={e=>e.target.style.borderColor="rgba(124,106,247,.25)"}
+            />
+          </div>
+          <div style={{marginBottom:22}}>
+            <label style={{display:"block",fontSize:11,fontWeight:800,color:"rgba(167,139,250,.7)",letterSpacing:1,textTransform:"uppercase",marginBottom:7}}>
+              Contraseña
+            </label>
+            <input type="password" value={pass} onChange={e=>setPass(e.target.value)} required
+              placeholder="••••••••"
+              style={{width:"100%",padding:"11px 14px",borderRadius:12,border:"1px solid rgba(124,106,247,.25)",
+                background:"#080c14",color:"#d4dcf5",fontSize:14,fontFamily:"inherit",boxSizing:"border-box",outline:"none"}}
+              onFocus={e=>e.target.style.borderColor="rgba(124,106,247,.6)"}
+              onBlur={e=>e.target.style.borderColor="rgba(124,106,247,.25)"}
+            />
+          </div>
+          {error && (
+            <div style={{padding:"10px 14px",marginBottom:16,borderRadius:10,background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",color:"#f87171",fontSize:13,fontWeight:600}}>
+              ⚠️ {error}
+            </div>
+          )}
+          <button type="submit" disabled={loading}
+            style={{width:"100%",padding:"13px",borderRadius:14,border:"none",cursor:loading?"not-allowed":"pointer",
+              background:"linear-gradient(135deg,#7c3aed,#9333ea)",color:"#fff",fontSize:14,fontWeight:800,
+              fontFamily:"inherit",opacity:loading?.7:1,transition:"all .2s"}}>
+            {loading ? "⏳ Ingresando..." : "🔐 Ingresar"}
+          </button>
+        </form>
+        <p style={{textAlign:"center",color:"rgba(255,255,255,.15)",fontSize:11,marginTop:16}}>
+          AI Swarm Lab · Grupo PCR · Panamá
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Admin Panel ──────────────────────────────────────────────────────────────
+function AdminPanel({ user, onClose }) {
+  const [view, setView]     = useState("users"); // users | audit | password
+  const [users, setUsers]   = useState([]);
+  const [audit, setAudit]   = useState([]);
+  const [loading, setLoad]  = useState(false);
+  const [msg, setMsg]       = useState("");
+  const [form, setForm]     = useState({email:"",name:"",role:"operator",password:""});
+  const [pwForm, setPwForm] = useState({current:"",next:"",next2:""});
+  const token               = localStorage.getItem("swarm_token");
+  const hdr                 = { Authorization:"Bearer "+token, "Content-Type":"application/json" };
+
+  const load = async () => {
+    setLoad(true);
+    try {
+      if (view==="users") {
+        const r = await fetch("/api/users",{headers:hdr});
+        if (r.ok) setUsers(await r.json());
+      } else if (view==="audit") {
+        const r = await fetch("/api/audit",{headers:hdr});
+        if (r.ok) setAudit(await r.json());
+      }
+    } finally { setLoad(false); }
+  };
+
+  useEffect(()=>{ load(); }, [view]);
+
+  const createUser = async (e) => {
+    e.preventDefault(); setMsg("");
+    const r = await fetch("/api/users",{method:"POST",headers:hdr,body:JSON.stringify(form)});
+    const d = await r.json();
+    if (r.ok) { setMsg("✅ Usuario creado: "+form.email); setForm({email:"",name:"",role:"operator",password:""}); load(); }
+    else setMsg("❌ "+d.error);
+  };
+
+  const toggleActive = async (u) => {
+    const r = await fetch("/api/users/"+u.id,{method:"PUT",headers:hdr,body:JSON.stringify({active:!u.active})});
+    if (r.ok) load(); else { const d=await r.json(); setMsg("❌ "+d.error); }
+  };
+
+  const changeRole = async (u, role) => {
+    const r = await fetch("/api/users/"+u.id,{method:"PUT",headers:hdr,body:JSON.stringify({role})});
+    if (r.ok) load(); else { const d=await r.json(); setMsg("❌ "+d.error); }
+  };
+
+  const changePassword = async (e) => {
+    e.preventDefault(); setMsg("");
+    if (pwForm.next!==pwForm.next2) return setMsg("❌ Las contraseñas no coinciden");
+    const r = await fetch("/api/auth/change-password",{method:"POST",headers:hdr,body:JSON.stringify({currentPassword:pwForm.current,newPassword:pwForm.next})});
+    const d = await r.json();
+    if (r.ok) { setMsg("✅ Contraseña actualizada"); setPwForm({current:"",next:"",next2:""}); }
+    else setMsg("❌ "+d.error);
+  };
+
+  const ROLE_COLORS = { admin:"#a78bfa", operator:"#10b981", viewer:"#64748b" };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(2,4,8,.95)",zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center",padding:16,fontFamily:"'Nunito',sans-serif"}}>
+      <div style={{width:"100%",maxWidth:860,maxHeight:"90vh",display:"flex",flexDirection:"column",background:"#0d1117",border:"1px solid rgba(124,106,247,.3)",borderRadius:20,overflow:"hidden",boxShadow:"0 0 60px rgba(124,106,247,.15)"}}>
+
+        {/* Header */}
+        <div style={{padding:"16px 20px",borderBottom:"1px solid rgba(255,255,255,.07)",display:"flex",alignItems:"center",gap:10,background:"rgba(124,106,247,.06)"}}>
+          <span style={{fontSize:20}}>⚙️</span>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:900,color:"#a78bfa"}}>Panel de Administración</div>
+            <div style={{fontSize:10,color:"rgba(255,255,255,.3)"}}>{user.name} · {user.email} · {user.role}</div>
+          </div>
+          <button onClick={onClose} style={{background:"transparent",border:"1px solid rgba(255,255,255,.1)",borderRadius:8,color:"rgba(255,255,255,.5)",padding:"5px 12px",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>✕ Cerrar</button>
+        </div>
+
+        {/* Tabs */}
+        <div style={{display:"flex",borderBottom:"1px solid rgba(255,255,255,.07)"}}>
+          {[["users","👥 Usuarios"],["audit","📋 Auditoría"],["password","🔑 Mi contraseña"]].map(([v,l])=>(
+            <button key={v} onClick={()=>{setView(v);setMsg("");}}
+              style={{padding:"10px 18px",border:"none",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontSize:11,fontWeight:800,letterSpacing:.5,textTransform:"uppercase",
+                background:view===v?"rgba(124,106,247,.15)":"transparent",
+                color:view===v?"#a78bfa":"rgba(255,255,255,.3)",
+                borderBottom:view===v?"2px solid #7c3aed":"2px solid transparent"}}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div style={{flex:1,overflow:"auto",padding:20}}>
+          {msg && <div style={{padding:"10px 14px",marginBottom:14,borderRadius:10,background:msg.startsWith("✅")?"rgba(16,185,129,.1)":"rgba(239,68,68,.1)",border:"1px solid "+(msg.startsWith("✅")?"rgba(16,185,129,.3)":"rgba(239,68,68,.3)"),color:msg.startsWith("✅")?"#10b981":"#f87171",fontSize:12,fontWeight:600}}>{msg}</div>}
+
+          {/* USERS VIEW */}
+          {view==="users" && user.permissions?.canManageUsers && (
+            <div>
+              {/* Create form */}
+              <div style={{marginBottom:20,padding:16,borderRadius:14,border:"1px solid rgba(124,106,247,.2)",background:"rgba(124,106,247,.04)"}}>
+                <div style={{fontSize:11,fontWeight:800,color:"#a78bfa",letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>➕ Crear usuario</div>
+                <form onSubmit={createUser} style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  {[["Email","email","email",form.email,"email@empresa.com"],
+                    ["Nombre","text","name",form.name,"Nombre completo"],
+                    ["Contraseña","password","password",form.password,"Min. 8 caracteres"]
+                  ].map(([label,type,key,val,ph])=>(
+                    <div key={key}>
+                      <label style={{fontSize:10,fontWeight:700,color:"rgba(167,139,250,.6)",letterSpacing:.5,textTransform:"uppercase",display:"block",marginBottom:4}}>{label}</label>
+                      <input type={type} value={val} placeholder={ph} required
+                        onChange={e=>setForm(f=>({...f,[key]:e.target.value}))}
+                        style={{width:"100%",padding:"9px 12px",borderRadius:10,border:"1px solid rgba(124,106,247,.2)",background:"#080c14",color:"#d4dcf5",fontSize:13,fontFamily:"inherit",boxSizing:"border-box",outline:"none"}}/>
+                    </div>
+                  ))}
+                  <div>
+                    <label style={{fontSize:10,fontWeight:700,color:"rgba(167,139,250,.6)",letterSpacing:.5,textTransform:"uppercase",display:"block",marginBottom:4}}>Rol</label>
+                    <select value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}
+                      style={{width:"100%",padding:"9px 12px",borderRadius:10,border:"1px solid rgba(124,106,247,.2)",background:"#080c14",color:"#d4dcf5",fontSize:13,fontFamily:"inherit",boxSizing:"border-box",outline:"none"}}>
+                      <option value="admin">Administrador</option>
+                      <option value="operator">Operador</option>
+                      <option value="viewer">Viewer</option>
+                    </select>
+                  </div>
+                  <div style={{gridColumn:"1/-1",display:"flex",justifyContent:"flex-end",marginTop:4}}>
+                    <button type="submit" style={{padding:"9px 20px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7c3aed,#9333ea)",color:"#fff",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+                      Crear usuario
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Users list */}
+              {loading ? <div style={{textAlign:"center",padding:20,color:"rgba(255,255,255,.3)"}}>⏳ Cargando...</div> : (
+                <div>
+                  <div style={{fontSize:11,fontWeight:800,color:"rgba(167,139,250,.6)",letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>
+                    👥 Usuarios ({users.length})
+                  </div>
+                  {users.map(u=>(
+                    <div key={u.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:12,marginBottom:6,background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.06)"}}>
+                      <div style={{width:32,height:32,borderRadius:"50%",background:"rgba(124,106,247,.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>
+                        {u.name?.[0]?.toUpperCase()||"?"}
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700,color:"#d4dcf5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.name}</div>
+                        <div style={{fontSize:11,color:"rgba(255,255,255,.35)"}}>{u.email} · {u.loginCount} logins · {u.lastLogin?new Date(u.lastLogin).toLocaleDateString("es-PA"):"nunca"}</div>
+                      </div>
+                      <select value={u.role} onChange={e=>changeRole(u,e.target.value)}
+                        disabled={u.id===user.id}
+                        style={{padding:"4px 8px",borderRadius:8,border:"1px solid rgba(124,106,247,.25)",background:"#080c14",color:ROLE_COLORS[u.role]||"#d4dcf5",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",outline:"none"}}>
+                        <option value="admin">admin</option>
+                        <option value="operator">operator</option>
+                        <option value="viewer">viewer</option>
+                      </select>
+                      <button onClick={()=>toggleActive(u)} disabled={u.id===user.id}
+                        style={{padding:"5px 12px",borderRadius:8,border:"1px solid "+(u.active?"rgba(239,68,68,.3)":"rgba(16,185,129,.3)"),background:u.active?"rgba(239,68,68,.08)":"rgba(16,185,129,.08)",color:u.active?"#f87171":"#10b981",fontSize:11,fontWeight:700,cursor:u.id===user.id?"not-allowed":"pointer",fontFamily:"inherit",opacity:u.id===user.id?.4:1}}>
+                        {u.active?"Desactivar":"Activar"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* AUDIT VIEW */}
+          {view==="audit" && user.permissions?.canViewAudit && (
+            <div>
+              <div style={{fontSize:11,fontWeight:800,color:"rgba(167,139,250,.6)",letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>
+                📋 Log de auditoría — últimas 500 entradas
+              </div>
+              {loading ? <div style={{textAlign:"center",padding:20,color:"rgba(255,255,255,.3)"}}>⏳ Cargando...</div> : (
+                <div style={{fontFamily:"'Fira Code',monospace",fontSize:11}}>
+                  {audit.map((e,i)=>{
+                    const color = e.action?.includes("FAIL")?"#f87171":e.action?.includes("DELETED")?"#f87171":e.action?.includes("OK")?"#10b981":"rgba(167,139,250,.7)";
+                    return (
+                      <div key={i} style={{display:"flex",gap:10,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,.03)",alignItems:"flex-start"}}>
+                        <span style={{color:"rgba(255,255,255,.2)",flexShrink:0,fontSize:10}}>{new Date(e.ts).toLocaleString("es-PA",{timeZone:"America/Panama"})}</span>
+                        <span style={{color,fontWeight:700,flexShrink:0,minWidth:140}}>{e.action}</span>
+                        <span style={{color:"rgba(255,255,255,.5)"}}>{e.email}</span>
+                        {e.detail&&<span style={{color:"rgba(255,255,255,.25)"}}>{e.detail}</span>}
+                        {e.ip&&<span style={{color:"rgba(255,255,255,.15)",marginLeft:"auto",flexShrink:0}}>{e.ip}</span>}
+                      </div>
+                    );
+                  })}
+                  {audit.length===0&&<div style={{color:"rgba(255,255,255,.2)",padding:20,textAlign:"center"}}>Sin entradas de auditoría</div>}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* CHANGE PASSWORD VIEW */}
+          {view==="password" && (
+            <div style={{maxWidth:400}}>
+              <div style={{fontSize:11,fontWeight:800,color:"rgba(167,139,250,.6)",letterSpacing:1,textTransform:"uppercase",marginBottom:16}}>
+                🔑 Cambiar contraseña
+              </div>
+              <form onSubmit={changePassword}>
+                {[["Contraseña actual","password","current",pwForm.current,"••••••••"],
+                  ["Nueva contraseña","password","next",pwForm.next,"Min. 8 caracteres"],
+                  ["Confirmar nueva","password","next2",pwForm.next2,"Repetir contraseña"]
+                ].map(([label,type,key,val,ph])=>(
+                  <div key={key} style={{marginBottom:14}}>
+                    <label style={{fontSize:10,fontWeight:700,color:"rgba(167,139,250,.6)",letterSpacing:.5,textTransform:"uppercase",display:"block",marginBottom:5}}>{label}</label>
+                    <input type={type} value={val} placeholder={ph} required
+                      onChange={e=>setPwForm(f=>({...f,[key]:e.target.value}))}
+                      style={{width:"100%",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(124,106,247,.2)",background:"#080c14",color:"#d4dcf5",fontSize:13,fontFamily:"inherit",boxSizing:"border-box",outline:"none"}}/>
+                  </div>
+                ))}
+                <button type="submit" style={{padding:"11px 24px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#7c3aed,#9333ea)",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",marginTop:4}}>
+                  Actualizar contraseña
+                </button>
+              </form>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MODELS — Brecha 2: Multi-model support
 // ─────────────────────────────────────────────────────────────────────────────
 const MODELS = {
@@ -2250,7 +2574,27 @@ function haptic(pattern = [30]) {
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
-export default function AISwarm() {
+// ── Auth-gated App wrapper ───────────────────────────────────────────────────
+export default function App() {
+  const { user, authReady, login, logout } = useAuth();
+  const [showAdmin, setShowAdmin] = useState(false);
+
+  if (!authReady) return (
+    <div style={{minHeight:"100vh",background:"#020408",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{fontSize:40,animation:"spin 1s linear infinite",display:"inline-block"}}>🤖</div>
+    </div>
+  );
+  if (!user) return <LoginScreen onLogin={login} />;
+
+  return (
+    <>
+      {showAdmin && <AdminPanel user={user} onClose={()=>setShowAdmin(false)} />}
+      <AISwarm currentUser={user} onLogout={logout} onOpenAdmin={()=>setShowAdmin(true)} />
+    </>
+  );
+}
+
+function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
   // Core flow
   const [idea, setIdea]               = useState("");
   const [step, setStep]               = useState("input");
@@ -3146,6 +3490,27 @@ export default function AISwarm() {
                   <span style={{fontSize:9,color:c+"bb",fontWeight:800,textTransform:"uppercase",letterSpacing:1}}>{l}</span>
                 </div>
               ))}
+            </div>
+
+            {/* User bar */}
+            <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 12px",borderRadius:999,background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.08)"}}>
+                <span style={{fontSize:14}}>👤</span>
+                <span style={{fontSize:11,color:"rgba(167,139,250,.8)",fontWeight:700}}>{currentUser?.name}</span>
+                <span style={{fontSize:9,padding:"2px 7px",borderRadius:999,background:"rgba(124,106,247,.2)",color:"#a78bfa",fontWeight:800,letterSpacing:.5,textTransform:"uppercase"}}>
+                  {currentUser?.role}
+                </span>
+              </div>
+              {currentUser?.permissions?.canManageUsers && (
+                <button onClick={onOpenAdmin}
+                  style={{padding:"5px 12px",borderRadius:999,border:"1px solid rgba(124,106,247,.3)",background:"rgba(124,106,247,.08)",color:"#a78bfa",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                  ⚙️ Admin
+                </button>
+              )}
+              <button onClick={onLogout}
+                style={{padding:"5px 12px",borderRadius:999,border:"1px solid rgba(239,68,68,.25)",background:"rgba(239,68,68,.06)",color:"#f87171",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                🚪 Salir
+              </button>
             </div>
 
             {/* Budget bar + tabs */}
