@@ -1,363 +1,59 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AUTH LAYER
+// THEME SYSTEM — dark / mid / light
 // ─────────────────────────────────────────────────────────────────────────────
-function useAuth() {
-  const [user, setUser]       = useState(null);
-  const [authReady, setReady] = useState(false);
+function useTheme() {
+  const [theme, setThemeState] = useState(() => {
+    const saved = localStorage.getItem("swarm_theme");
+    if (saved) return saved;
+    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  });
 
   useEffect(() => {
-    const token = localStorage.getItem("swarm_token");
-    if (!token) { setReady(true); return; }
-    fetch("/api/auth/me", { headers:{ Authorization:"Bearer "+token } })
-      .then(r => {
-        if (r.status === 401) { localStorage.removeItem("swarm_token"); return null; }
-        return r.ok ? r.json() : null;
-      })
-      .then(u => { if (u) setUser(u); else localStorage.removeItem("swarm_token"); })
-      .catch(() => localStorage.removeItem("swarm_token"))
-      .finally(() => setReady(true));
-  }, []);
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("swarm_theme", theme);
+  }, [theme]);
 
-  // Global 401 watcher — kicks out if another session took over
-  useEffect(() => {
-    const orig = window.fetch;
-    window.fetch = async (...args) => {
-      const res = await orig(...args);
-      if (res.status === 401 && user) {
-        const clone = res.clone();
-        clone.json().then(d => {
-          if (d?.error?.includes("otra sesión")) {
-            localStorage.removeItem("swarm_token");
-            setUser(null);
-            alert("⚠️ Tu sesión fue cerrada porque se inició otra sesión con tu cuenta.");
-          }
-        }).catch(()=>{});
-      }
-      return res;
-    };
-    return () => { window.fetch = orig; };
-  }, [user]);
-
-  const login = async (email, password) => {
-    const r = await fetch("/api/auth/login", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ email, password }),
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || "Error de autenticación");
-    localStorage.setItem("swarm_token", d.token);
-    setUser(d.user);
-    return d.user;
-  };
-
-  const logout = async () => {
-    const token = localStorage.getItem("swarm_token");
-    if (token) fetch("/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+token}}).catch(()=>{});
-    localStorage.removeItem("swarm_token");
-    setUser(null);
-  };
-
-  return { user, authReady, login, logout };
+  const setTheme = (t) => setThemeState(t);
+  return { theme, setTheme };
 }
 
-// ── Login Screen ─────────────────────────────────────────────────────────────
-function LoginScreen({ onLogin }) {
-  const [email, setEmail]   = useState("");
-  const [pass,  setPass]    = useState("");
-  const [error, setError]   = useState("");
-  const [loading, setLoad]  = useState(false);
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setError(""); setLoad(true);
-    try { await onLogin(email, pass); }
-    catch(err) { setError(err.message); }
-    finally { setLoad(false); }
-  };
-
+function ThemeSwitcher({ theme, setTheme }) {
+  const opts = [
+    { id:"dark",  icon:"🌙", label:"Dark"  },
+    { id:"mid",   icon:"🌗", label:"Mid"   },
+    { id:"light", icon:"☀️", label:"Light" },
+  ];
   return (
-    <div style={{minHeight:"100vh",background:"#020408",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Nunito',sans-serif",padding:16}}>
-      <div style={{width:"100%",maxWidth:400}}>
-        {/* Logo */}
-        <div style={{textAlign:"center",marginBottom:32}}>
-          <div style={{fontSize:48,marginBottom:8}}>🤖</div>
-          <h1 style={{fontFamily:"'Syne',sans-serif",fontSize:28,fontWeight:900,margin:"0 0 4px",
-            background:"linear-gradient(135deg,#7c3aed,#ec4899)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>
-            AI Swarm Lab
-          </h1>
-          <p style={{color:"rgba(167,139,250,.5)",fontSize:12,margin:0}}>v7 · Acceso seguro</p>
-        </div>
-
-        {/* Form */}
-        <form onSubmit={submit} style={{background:"#0d1117",border:"1px solid rgba(124,106,247,.25)",borderRadius:20,padding:28,boxShadow:"0 0 40px rgba(124,106,247,.1)"}}>
-          <div style={{marginBottom:18}}>
-            <label style={{display:"block",fontSize:11,fontWeight:800,color:"rgba(167,139,250,.7)",letterSpacing:1,textTransform:"uppercase",marginBottom:7}}>
-              Email
-            </label>
-            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} required
-              placeholder="usuario@empresa.com"
-              style={{width:"100%",padding:"11px 14px",borderRadius:12,border:"1px solid rgba(124,106,247,.25)",
-                background:"#080c14",color:"#d4dcf5",fontSize:14,fontFamily:"inherit",boxSizing:"border-box",outline:"none"}}
-              onFocus={e=>e.target.style.borderColor="rgba(124,106,247,.6)"}
-              onBlur={e=>e.target.style.borderColor="rgba(124,106,247,.25)"}
-            />
-          </div>
-          <div style={{marginBottom:22}}>
-            <label style={{display:"block",fontSize:11,fontWeight:800,color:"rgba(167,139,250,.7)",letterSpacing:1,textTransform:"uppercase",marginBottom:7}}>
-              Contraseña
-            </label>
-            <input type="password" value={pass} onChange={e=>setPass(e.target.value)} required
-              placeholder="••••••••"
-              style={{width:"100%",padding:"11px 14px",borderRadius:12,border:"1px solid rgba(124,106,247,.25)",
-                background:"#080c14",color:"#d4dcf5",fontSize:14,fontFamily:"inherit",boxSizing:"border-box",outline:"none"}}
-              onFocus={e=>e.target.style.borderColor="rgba(124,106,247,.6)"}
-              onBlur={e=>e.target.style.borderColor="rgba(124,106,247,.25)"}
-            />
-          </div>
-          {error && (
-            <div style={{padding:"10px 14px",marginBottom:16,borderRadius:10,background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",color:"#f87171",fontSize:13,fontWeight:600}}>
-              ⚠️ {error}
-            </div>
-          )}
-          <button type="submit" disabled={loading}
-            style={{width:"100%",padding:"13px",borderRadius:14,border:"none",cursor:loading?"not-allowed":"pointer",
-              background:"linear-gradient(135deg,#7c3aed,#9333ea)",color:"#fff",fontSize:14,fontWeight:800,
-              fontFamily:"inherit",opacity:loading?.7:1,transition:"all .2s"}}>
-            {loading ? "⏳ Ingresando..." : "🔐 Ingresar"}
-          </button>
-        </form>
-        <p style={{textAlign:"center",color:"rgba(255,255,255,.15)",fontSize:11,marginTop:16}}>
-          AI Swarm Lab · Grupo PCR · Panamá
-        </p>
-      </div>
+    <div style={{
+      display:"flex", alignItems:"center", gap:2,
+      background:"var(--bg-surface-1)",
+      border:"1px solid var(--border-base)",
+      borderRadius:999, padding:3,
+    }}>
+      {opts.map(o => (
+        <button key={o.id} onClick={() => setTheme(o.id)}
+          title={o.label}
+          style={{
+            display:"flex", alignItems:"center", gap:4,
+            padding:"5px 10px", borderRadius:999, border:"none",
+            cursor:"pointer", fontFamily:"'Nunito',sans-serif",
+            fontSize:11, fontWeight:800,
+            background: theme===o.id ? "var(--accent)" : "transparent",
+            color: theme===o.id ? "#fff" : "var(--text-secondary)",
+            transition:"all .25s cubic-bezier(.34,1.56,.64,1)",
+            transform: theme===o.id ? "scale(1.05)" : "scale(1)",
+          }}>
+          <span style={{fontSize:13}}>{o.icon}</span>
+          <span style={{display: theme===o.id ? "inline" : "none"}}>{o.label}</span>
+        </button>
+      ))}
     </div>
   );
 }
 
-// ── Admin Panel ──────────────────────────────────────────────────────────────
-function AdminPanel({ user, onClose }) {
-  const [view, setView]     = useState("users"); // users | audit | password
-  const [users, setUsers]   = useState([]);
-  const [audit, setAudit]   = useState([]);
-  const [loading, setLoad]  = useState(false);
-  const [msg, setMsg]       = useState("");
-  const [form, setForm]     = useState({email:"",name:"",role:"operator",password:""});
-  const [pwForm, setPwForm] = useState({current:"",next:"",next2:""});
-  const token               = localStorage.getItem("swarm_token");
-  const hdr                 = { Authorization:"Bearer "+token, "Content-Type":"application/json" };
 
-  const load = async () => {
-    setLoad(true);
-    try {
-      if (view==="users") {
-        const r = await fetch("/api/users",{headers:hdr});
-        if (r.ok) setUsers(await r.json());
-      } else if (view==="audit") {
-        const r = await fetch("/api/audit",{headers:hdr});
-        if (r.ok) setAudit(await r.json());
-      }
-    } finally { setLoad(false); }
-  };
-
-  useEffect(()=>{ load(); }, [view]);
-
-  const createUser = async (e) => {
-    e.preventDefault(); setMsg("");
-    const r = await fetch("/api/users",{method:"POST",headers:hdr,body:JSON.stringify(form)});
-    const d = await r.json();
-    if (r.ok) { setMsg("✅ Usuario creado: "+form.email); setForm({email:"",name:"",role:"operator",password:""}); load(); }
-    else setMsg("❌ "+d.error);
-  };
-
-  const toggleActive = async (u) => {
-    const r = await fetch("/api/users/"+u.id,{method:"PUT",headers:hdr,body:JSON.stringify({active:!u.active})});
-    if (r.ok) load(); else { const d=await r.json(); setMsg("❌ "+d.error); }
-  };
-
-  const changeRole = async (u, role) => {
-    const r = await fetch("/api/users/"+u.id,{method:"PUT",headers:hdr,body:JSON.stringify({role})});
-    if (r.ok) load(); else { const d=await r.json(); setMsg("❌ "+d.error); }
-  };
-
-  const changePassword = async (e) => {
-    e.preventDefault(); setMsg("");
-    if (pwForm.next!==pwForm.next2) return setMsg("❌ Las contraseñas no coinciden");
-    const r = await fetch("/api/auth/change-password",{method:"POST",headers:hdr,body:JSON.stringify({currentPassword:pwForm.current,newPassword:pwForm.next})});
-    const d = await r.json();
-    if (r.ok) { setMsg("✅ Contraseña actualizada"); setPwForm({current:"",next:"",next2:""}); }
-    else setMsg("❌ "+d.error);
-  };
-
-  const ROLE_COLORS = { superadmin:"#f59e0b", admin:"#a78bfa", operator:"#10b981", viewer:"#64748b" };
-
-  return (
-    <div style={{position:"fixed",inset:0,background:"rgba(2,4,8,.95)",zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center",padding:16,fontFamily:"'Nunito',sans-serif"}}>
-      <div style={{width:"100%",maxWidth:860,maxHeight:"90vh",display:"flex",flexDirection:"column",background:"#0d1117",border:"1px solid rgba(124,106,247,.3)",borderRadius:20,overflow:"hidden",boxShadow:"0 0 60px rgba(124,106,247,.15)"}}>
-
-        {/* Header */}
-        <div style={{padding:"16px 20px",borderBottom:"1px solid rgba(255,255,255,.07)",display:"flex",alignItems:"center",gap:10,background:"rgba(124,106,247,.06)"}}>
-          <span style={{fontSize:20}}>⚙️</span>
-          <div style={{flex:1}}>
-            <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:900,color:"#a78bfa"}}>Panel de Administración</div>
-            <div style={{fontSize:10,color:"rgba(255,255,255,.3)"}}>{user.name} · {user.email} · {user.role}</div>
-          </div>
-          <button onClick={onClose} style={{background:"transparent",border:"1px solid rgba(255,255,255,.1)",borderRadius:8,color:"rgba(255,255,255,.5)",padding:"5px 12px",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>✕ Cerrar</button>
-        </div>
-
-        {/* Tabs */}
-        <div style={{display:"flex",borderBottom:"1px solid rgba(255,255,255,.07)"}}>
-          {[["users","👥 Usuarios"],["audit","📋 Auditoría"],["password","🔑 Mi contraseña"]].map(([v,l])=>(
-            <button key={v} onClick={()=>{setView(v);setMsg("");}}
-              style={{padding:"10px 18px",border:"none",cursor:"pointer",fontFamily:"'Nunito',sans-serif",fontSize:11,fontWeight:800,letterSpacing:.5,textTransform:"uppercase",
-                background:view===v?"rgba(124,106,247,.15)":"transparent",
-                color:view===v?"#a78bfa":"rgba(255,255,255,.3)",
-                borderBottom:view===v?"2px solid #7c3aed":"2px solid transparent"}}>
-              {l}
-            </button>
-          ))}
-        </div>
-
-        {/* Content */}
-        <div style={{flex:1,overflow:"auto",padding:20}}>
-          {msg && <div style={{padding:"10px 14px",marginBottom:14,borderRadius:10,background:msg.startsWith("✅")?"rgba(16,185,129,.1)":"rgba(239,68,68,.1)",border:"1px solid "+(msg.startsWith("✅")?"rgba(16,185,129,.3)":"rgba(239,68,68,.3)"),color:msg.startsWith("✅")?"#10b981":"#f87171",fontSize:12,fontWeight:600}}>{msg}</div>}
-
-          {/* USERS VIEW */}
-          {view==="users" && user.permissions?.canManageUsers && (
-            <div>
-              {/* Create form */}
-              <div style={{marginBottom:20,padding:16,borderRadius:14,border:"1px solid rgba(124,106,247,.2)",background:"rgba(124,106,247,.04)"}}>
-                <div style={{fontSize:11,fontWeight:800,color:"#a78bfa",letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>➕ Crear usuario</div>
-                <form onSubmit={createUser} style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  {[["Email","email","email",form.email,"email@empresa.com"],
-                    ["Nombre","text","name",form.name,"Nombre completo"],
-                    ["Contraseña","password","password",form.password,"Min. 8 caracteres"]
-                  ].map(([label,type,key,val,ph])=>(
-                    <div key={key}>
-                      <label style={{fontSize:10,fontWeight:700,color:"rgba(167,139,250,.6)",letterSpacing:.5,textTransform:"uppercase",display:"block",marginBottom:4}}>{label}</label>
-                      <input type={type} value={val} placeholder={ph} required
-                        onChange={e=>setForm(f=>({...f,[key]:e.target.value}))}
-                        style={{width:"100%",padding:"9px 12px",borderRadius:10,border:"1px solid rgba(124,106,247,.2)",background:"#080c14",color:"#d4dcf5",fontSize:13,fontFamily:"inherit",boxSizing:"border-box",outline:"none"}}/>
-                    </div>
-                  ))}
-                  <div>
-                    <label style={{fontSize:10,fontWeight:700,color:"rgba(167,139,250,.6)",letterSpacing:.5,textTransform:"uppercase",display:"block",marginBottom:4}}>Rol</label>
-                    <select value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}
-                      style={{width:"100%",padding:"9px 12px",borderRadius:10,border:"1px solid rgba(124,106,247,.2)",background:"#080c14",color:"#d4dcf5",fontSize:13,fontFamily:"inherit",boxSizing:"border-box",outline:"none"}}>
-                      {user.role==="superadmin" && <option value="superadmin">Super Admin</option>}
-                      <option value="admin">Administrador</option>
-                      <option value="operator">Operador</option>
-                      <option value="viewer">Viewer</option>
-                    </select>
-                  </div>
-                  <div style={{gridColumn:"1/-1",display:"flex",justifyContent:"flex-end",marginTop:4}}>
-                    <button type="submit" style={{padding:"9px 20px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7c3aed,#9333ea)",color:"#fff",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
-                      Crear usuario
-                    </button>
-                  </div>
-                </form>
-              </div>
-
-              {/* Users list */}
-              {loading ? <div style={{textAlign:"center",padding:20,color:"rgba(255,255,255,.3)"}}>⏳ Cargando...</div> : (
-                <div>
-                  <div style={{fontSize:11,fontWeight:800,color:"rgba(167,139,250,.6)",letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>
-                    👥 Usuarios ({users.length})
-                  </div>
-                  {users.map(u=>(
-                    <div key={u.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:12,marginBottom:6,background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.06)"}}>
-                      <div style={{width:32,height:32,borderRadius:"50%",background:"rgba(124,106,247,.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>
-                        {u.name?.[0]?.toUpperCase()||"?"}
-                      </div>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:13,fontWeight:700,color:"#d4dcf5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.name}</div>
-                        <div style={{fontSize:11,color:"rgba(255,255,255,.35)"}}>{u.email} · {u.loginCount} logins · {u.lastLogin?new Date(u.lastLogin).toLocaleDateString("es-PA"):"nunca"}</div>
-                      </div>
-                      <select value={u.role} onChange={e=>changeRole(u,e.target.value)}
-                        disabled={u.id===user.id || u.role==="superadmin" || (u.role!=="superadmin"&&user.role!=="superadmin"&&u.role==="admin"&&false)}
-                        style={{padding:"4px 8px",borderRadius:8,border:"1px solid rgba(124,106,247,.25)",background:"#080c14",color:ROLE_COLORS[u.role]||"#d4dcf5",fontSize:11,fontWeight:700,cursor:u.role==="superadmin"?"not-allowed":"pointer",fontFamily:"inherit",outline:"none"}}>
-                        {user.role==="superadmin"&&<option value="superadmin">superadmin</option>}
-                        <option value="admin">admin</option>
-                        <option value="operator">operator</option>
-                        <option value="viewer">viewer</option>
-                      </select>
-                      <button onClick={()=>toggleActive(u)} disabled={u.id===user.id}
-                        style={{padding:"5px 12px",borderRadius:8,border:"1px solid "+(u.active?"rgba(239,68,68,.3)":"rgba(16,185,129,.3)"),background:u.active?"rgba(239,68,68,.08)":"rgba(16,185,129,.08)",color:u.active?"#f87171":"#10b981",fontSize:11,fontWeight:700,cursor:u.id===user.id?"not-allowed":"pointer",fontFamily:"inherit",opacity:u.id===user.id?.4:1}}>
-                        {u.active?"Desactivar":"Activar"}
-                      </button>
-                      <button
-                        onClick={async()=>{
-                          const r=await fetch("/api/users/"+u.id+"/session/revoke",{method:"POST",headers:hdr});
-                          const d=await r.json();
-                          setMsg(r.ok?"✅ Sesión revocada: "+u.email:"❌ "+d.error);
-                        }}
-                        title="Cerrar sesión activa del usuario"
-                        style={{padding:"5px 10px",borderRadius:8,border:"1px solid rgba(251,191,36,.3)",background:"rgba(251,191,36,.07)",color:"#fbbf24",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                        ⏏ Sesión
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* AUDIT VIEW */}
-          {view==="audit" && user.permissions?.canViewAudit && (
-            <div>
-              <div style={{fontSize:11,fontWeight:800,color:"rgba(167,139,250,.6)",letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>
-                📋 Log de auditoría — últimas 500 entradas
-              </div>
-              {loading ? <div style={{textAlign:"center",padding:20,color:"rgba(255,255,255,.3)"}}>⏳ Cargando...</div> : (
-                <div style={{fontFamily:"'Fira Code',monospace",fontSize:11}}>
-                  {audit.map((e,i)=>{
-                    const color = e.action?.includes("FAIL")?"#f87171":e.action?.includes("DELETED")?"#f87171":e.action?.includes("OK")?"#10b981":"rgba(167,139,250,.7)";
-                    return (
-                      <div key={i} style={{display:"flex",gap:10,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,.03)",alignItems:"flex-start"}}>
-                        <span style={{color:"rgba(255,255,255,.2)",flexShrink:0,fontSize:10}}>{new Date(e.ts).toLocaleString("es-PA",{timeZone:"America/Panama"})}</span>
-                        <span style={{color,fontWeight:700,flexShrink:0,minWidth:140}}>{e.action}</span>
-                        <span style={{color:"rgba(255,255,255,.5)"}}>{e.email}</span>
-                        {e.detail&&<span style={{color:"rgba(255,255,255,.25)"}}>{e.detail}</span>}
-                        {e.ip&&<span style={{color:"rgba(255,255,255,.15)",marginLeft:"auto",flexShrink:0}}>{e.ip}</span>}
-                      </div>
-                    );
-                  })}
-                  {audit.length===0&&<div style={{color:"rgba(255,255,255,.2)",padding:20,textAlign:"center"}}>Sin entradas de auditoría</div>}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* CHANGE PASSWORD VIEW */}
-          {view==="password" && (
-            <div style={{maxWidth:400}}>
-              <div style={{fontSize:11,fontWeight:800,color:"rgba(167,139,250,.6)",letterSpacing:1,textTransform:"uppercase",marginBottom:16}}>
-                🔑 Cambiar contraseña
-              </div>
-              <form onSubmit={changePassword}>
-                {[["Contraseña actual","password","current",pwForm.current,"••••••••"],
-                  ["Nueva contraseña","password","next",pwForm.next,"Min. 8 caracteres"],
-                  ["Confirmar nueva","password","next2",pwForm.next2,"Repetir contraseña"]
-                ].map(([label,type,key,val,ph])=>(
-                  <div key={key} style={{marginBottom:14}}>
-                    <label style={{fontSize:10,fontWeight:700,color:"rgba(167,139,250,.6)",letterSpacing:.5,textTransform:"uppercase",display:"block",marginBottom:5}}>{label}</label>
-                    <input type={type} value={val} placeholder={ph} required
-                      onChange={e=>setPwForm(f=>({...f,[key]:e.target.value}))}
-                      style={{width:"100%",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(124,106,247,.2)",background:"#080c14",color:"#d4dcf5",fontSize:13,fontFamily:"inherit",boxSizing:"border-box",outline:"none"}}/>
-                  </div>
-                ))}
-                <button type="submit" style={{padding:"11px 24px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#7c3aed,#9333ea)",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",marginTop:4}}>
-                  Actualizar contraseña
-                </button>
-              </form>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MODELS — Brecha 2: Multi-model support
@@ -1598,15 +1294,15 @@ function buildYAMLBundle(results) {
 function GroupSection({ group, fields, filled, config, onChange }) {
   const [open, setOpen] = useState(filled > 0);
   return (
-    <div style={{marginBottom:8,borderRadius:12,overflow:"hidden",border:"1px solid rgba(255,255,255,.05)"}}>
+    <div style={{marginBottom:8,borderRadius:12,overflow:"hidden",border:"1px solid var(--border-base)"}}>
       <button onClick={()=>setOpen(o=>!o)} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"9px 13px",border:"none",cursor:"pointer",background:open?group.color+"0c":"transparent",fontFamily:"inherit",transition:"background .15s"}}>
         <span style={{fontSize:13}}>{group.icon}</span>
         <span style={{fontFamily:"'Syne',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1.5,color:group.color,textTransform:"uppercase",flex:1,textAlign:"left"}}>{group.label}</span>
         {filled > 0
           ? <span style={{fontSize:9,padding:"2px 7px",borderRadius:999,background:group.color+"18",color:group.color,fontWeight:700,fontFamily:"'Fira Code',monospace"}}>{filled}/{fields.length}</span>
-          : <span style={{fontSize:9,color:"rgba(255,255,255,.2)"}}>opcional</span>
+          : <span style={{fontSize:9,color:"var(--text-muted)"}}>opcional</span>
         }
-        <span style={{fontSize:11,color:"rgba(255,255,255,.2)",transition:"transform .2s",transform:open?"rotate(180deg)":"rotate(0)"}}>▾</span>
+        <span style={{fontSize:11,color:"var(--text-muted)",transition:"transform .2s",transform:open?"rotate(180deg)":"rotate(0)"}}>▾</span>
       </button>
       {open && (
         <div style={{padding:"8px 12px 12px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
@@ -1640,11 +1336,11 @@ function StackConfigPanel({ config, onChange, onClose }) {
       <div style={{background:"#0d1117",border:"1px solid rgba(124,106,247,.35)",borderRadius:20,width:"100%",maxWidth:680,maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 0 60px rgba(124,106,247,.12)"}}>
         
         {/* Header */}
-        <div style={{padding:"16px 22px",borderBottom:"1px solid rgba(255,255,255,.06)",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+        <div style={{padding:"16px 22px",borderBottom:"1px solid var(--border-base)",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
           <div style={{width:4,height:22,borderRadius:2,background:"#10b981",boxShadow:"0 0 10px #10b981"}}/>
           <div style={{flex:1}}>
-            <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:800,color:"rgba(255,255,255,.1)"}}>Configuración del proyecto</div>
-            <div style={{fontSize:11,color:"rgba(255,255,255,.3)",marginTop:2}}>Los agentes usan estos valores para generar código 100% ejecutable — sin placeholders</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:800,color:"var(--text-muted)"}}>Configuración del proyecto</div>
+            <div style={{fontSize:11,color:"var(--text-muted)",marginTop:2}}>Los agentes usan estos valores para generar código 100% ejecutable — sin placeholders</div>
           </div>
           {filledCount > 0 && <span style={{fontSize:10,padding:"3px 9px",borderRadius:999,background:"rgba(16,185,129,.15)",color:"#10b981",fontWeight:700,fontFamily:"'Fira Code',monospace"}}>{filledCount} configurados</span>}
         </div>
@@ -1658,19 +1354,19 @@ function StackConfigPanel({ config, onChange, onClose }) {
               <GroupSection key={group.id} group={group} fields={fields} filled={filled} config={config} onChange={onChange}/>
             );
           })}
-          <div style={{marginTop:6,padding:"9px 12px",borderRadius:10,background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.04)",fontSize:10,color:"rgba(255,255,255,.22)",lineHeight:1.6,display:"flex",gap:6,alignItems:"flex-start"}}>
+          <div style={{marginTop:6,padding:"9px 12px",borderRadius:10,background:"var(--bg-surface-1)",border:"1px solid var(--border-base)",fontSize:10,color:"var(--text-secondary)",lineHeight:1.6,display:"flex",gap:6,alignItems:"flex-start"}}>
             <span style={{flexShrink:0,marginTop:1}}>🔒</span>
             <span>Estos valores se inyectan en los prompts de cada agente para generar código sin placeholders. No salen de tu navegador.</span>
           </div>
         </div>
 
         {/* Footer */}
-        <div style={{padding:"12px 22px",borderTop:"1px solid rgba(255,255,255,.06)",display:"flex",gap:8,flexShrink:0}}>
+        <div style={{padding:"12px 22px",borderTop:"1px solid var(--border-base)",display:"flex",gap:8,flexShrink:0}}>
           <button onClick={onClose} style={{flex:1,padding:"10px 16px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#7c3aed,#4f46e5)",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
             ✓ Guardar y continuar
           </button>
           <button onClick={()=>{Object.keys(config).forEach(k=>onChange(k,""));onClose();}}
-            style={{padding:"10px 14px",borderRadius:12,border:"1px solid rgba(255,255,255,.08)",background:"transparent",color:"rgba(255,255,255,.35)",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+            style={{padding:"10px 14px",borderRadius:12,border:"1px solid var(--border-base)",background:"transparent",color:"var(--text-muted)",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
             Limpiar
           </button>
         </div>
@@ -1697,7 +1393,7 @@ function ExportModal({ content, filename, onClose }) {
           <span style={{fontFamily:"'Fira Code',monospace",fontSize:12,color:"#a78bfa",fontWeight:700,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{filename}</span>
           <span style={{fontSize:10,color:"#a78bfa",fontWeight:700}}>{lines} líneas</span>
           <span style={{fontSize:10,fontWeight:800,padding:"3px 10px",borderRadius:999,background:"rgba(124,106,247,.12)",color:"#7c3aed"}}>{ext}</span>
-          <button onClick={onClose} style={{padding:"5px 11px",borderRadius:10,border:"2px solid rgba(124,106,247,.2)",background:"#0d1117",color:"rgba(255,255,255,.35)",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>✕</button>
+          <button onClick={onClose} style={{padding:"5px 11px",borderRadius:10,border:"2px solid rgba(124,106,247,.2)",background:"#0d1117",color:"var(--text-muted)",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>✕</button>
         </div>
         <div style={{padding:"8px 20px",background:"rgba(16,185,129,.05)",borderBottom:"2px solid rgba(16,185,129,.15)",fontSize:11,color:"#10b981",fontWeight:700,display:"flex",alignItems:"center",gap:8}}>
           <span>💡</span>
@@ -1709,7 +1405,7 @@ function ExportModal({ content, filename, onClose }) {
           <button onClick={copy} style={{flex:1,padding:"11px 16px",borderRadius:14,border:"none",background:copied?"linear-gradient(135deg,#22c55e,rgba(16,185,129,.6))":"linear-gradient(135deg,#7c3aed,#6d28d9)",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"'Nunito',sans-serif",transition:"all .3s",boxShadow:copied?"0 4px 16px rgba(34,197,94,.4)":"0 4px 16px rgba(124,58,237,.35)"}}>
             {copied?"✅ ¡Copiado!":"📋 Copiar todo (Ctrl+C)"}
           </button>
-          <button onClick={onClose} style={{padding:"11px 20px",borderRadius:14,border:"2px solid rgba(124,106,247,.2)",background:"#0d1117",color:"rgba(255,255,255,.35)",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Nunito',sans-serif"}}>Cerrar</button>
+          <button onClick={onClose} style={{padding:"11px 20px",borderRadius:14,border:"2px solid rgba(124,106,247,.2)",background:"#0d1117",color:"var(--text-muted)",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Nunito',sans-serif"}}>Cerrar</button>
         </div>
       </div>
     </div>
@@ -2405,18 +2101,18 @@ function AgentChip({ agent, state }) {
 
   if (isSkip) return null;
 
-  const bg = isActive ? "#0d1117"
+  const bg = isActive ? "var(--bg-card)"
            : isDone   ? "rgba(16,185,129,.05)"
            : isFail   ? "rgba(239,68,68,.06)"
-           : "rgba(255,255,255,.03)";
+           : "var(--bg-surface-1)";
   const border = isActive ? "#c084fc"
                : isDone   ? "#86efac"
                : isFail   ? "rgba(239,68,68,.3)"
-               : "rgba(255,255,255,.1)";
+               : "var(--border-strong)";
   const color = isActive ? "#7c3aed"
               : isDone   ? "#10b981"
               : isFail   ? "#dc2626"
-              : "rgba(255,255,255,.35)";
+              : "var(--text-muted)";
   const shadow = isActive ? "0 0 0 3px rgba(124,106,247,.2), 0 4px 12px #c084fc55"
                : isDone   ? "0 2px 8px #86efac44"
                : isFail   ? "0 2px 8px rgba(239,68,68,.3)44"
@@ -2457,7 +2153,7 @@ function AgentResult({ agent, result, defaultOpen, onRetry }) {
         <span style={{color:result.isError?"#dc2626":agent.color,flex:1,fontSize:12,fontWeight:800,fontFamily:"'Nunito',sans-serif",textAlign:"left"}}>{agent.name}</span>
         {hasSynth && <span style={{fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:999,background:"rgba(16,185,129,.1)",color:"#10b981",letterSpacing:.5}}>✨ SYNTH</span>}
         {result.isError && <span style={{fontSize:9,fontWeight:700,padding:"3px 8px",borderRadius:999,background:"rgba(239,68,68,.12)",color:"#dc2626"}}>❌ ERROR</span>}
-        {!result.isError && <span style={{fontSize:10,color:"rgba(255,255,255,.35)",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{agent.desc}</span>}
+        {!result.isError && <span style={{fontSize:10,color:"var(--text-muted)",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{agent.desc}</span>}
         <span style={{fontSize:14,color:"rgba(167,139,250,.4)",transition:"transform .25s",transform:open?"rotate(180deg)":"rotate(0)",flexShrink:0}}>▾</span>
       </button>
       {open && (
@@ -2492,7 +2188,7 @@ function SessionCard({ session, onLoad, onDelete }) {
       <span style={{fontSize:24,flexShrink:0}}>📄</span>
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontSize:13,fontWeight:800,color:"#d4dcf5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:3}}>{session.idea?.slice(0,60)||"Sin título"}...</div>
-        <div style={{fontSize:10,color:"rgba(255,255,255,.35)",display:"flex",gap:10,flexWrap:"wrap"}}>
+        <div style={{fontSize:10,color:"var(--text-muted)",display:"flex",gap:10,flexWrap:"wrap"}}>
           <span>🕐 {dateStr}</span>
           <span style={{color:"#10b981",fontWeight:700}}>✅ {successCount} agentes</span>
           <span style={{color:"#7c3aed",fontWeight:700}}>🧠 {session.model||"sonnet"}</span>
@@ -2609,28 +2305,10 @@ function haptic(pattern = [30]) {
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
-// ── Auth-gated App wrapper ───────────────────────────────────────────────────
-export default function App() {
-  const { user, authReady, login, logout } = useAuth();
-  const [showAdmin, setShowAdmin] = useState(false);
-
-  if (!authReady) return (
-    <div style={{minHeight:"100vh",background:"#020408",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <div style={{fontSize:40,animation:"spin 1s linear infinite",display:"inline-block"}}>🤖</div>
-    </div>
-  );
-  if (!user) return <LoginScreen onLogin={login} />;
-
-  return (
-    <>
-      {showAdmin && <AdminPanel user={user} onClose={()=>setShowAdmin(false)} />}
-      <AISwarm currentUser={user} onLogout={logout} onOpenAdmin={()=>setShowAdmin(true)} />
-    </>
-  );
-}
-
-function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
+export default function AISwarm() {
   // Core flow
+  const { theme, setTheme } = useTheme();
+
   const [idea, setIdea]               = useState("");
   const [step, setStep]               = useState("input");
   const [questions, setQuestions]     = useState([]);
@@ -3120,7 +2798,244 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
         @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800;900&family=Syne:wght@700;800&family=Fira+Code:wght@400;600&display=swap');
 
         /* ══════════════════════════════════════════════════════════════
-           BRUTAL KEYFRAMES — 40+ animations
+           THEME VARIABLES — DARK (default)
+        ══════════════════════════════════════════════════════════════ */
+        :root {
+          --bg-base:       #020408;
+          --bg-card:       #0d1117;
+          --bg-card-glow:  #0a0814;
+          --bg-input:      #070b12;
+          --bg-surface-1:  rgba(255,255,255,.04);
+          --bg-surface-2:  rgba(255,255,255,.07);
+
+          --text-primary:  #d4dcf5;
+          --text-secondary:rgba(212,220,245,.6);
+          --text-muted:    rgba(255,255,255,.2);
+
+          --border-base:   rgba(255,255,255,.07);
+          --border-accent: rgba(124,106,247,.5);
+          --border-strong: rgba(255,255,255,.14);
+
+          --shadow-card:   0 4px 32px rgba(0,0,0,.6);
+          --shadow-btn:    0 6px 24px rgba(124,58,237,.45);
+          --shadow-glow:   0 0 24px rgba(124,106,247,.35);
+
+          --blob-opacity:  .07;
+          --blob-blur:     70px;
+          --grid-color:    rgba(124,106,247,.025);
+
+          --accent:        #7c3aed;
+          --accent-soft:   rgba(124,106,247,.12);
+
+          --prog-bg:       rgba(255,255,255,.05);
+          --prog-shadow:   0 0 16px rgba(124,58,237,.6),0 0 30px rgba(236,72,153,.3);
+          --prog-gradient: linear-gradient(90deg,#7c3aed,#a78bfa,#ec4899,#f59e0b,#10b981,#a78bfa,#7c3aed);
+
+          --scrollbar-thumb: linear-gradient(#7c3aed,#ec4899);
+          --scrollbar-hover: linear-gradient(#a78bfa,#f472b6);
+          --scrollbar-track: rgba(255,255,255,.02);
+
+          --input-focus-bg: #0a0e18;
+          --input-focus-shadow: 0 0 0 3px rgba(124,106,247,.15),0 0 20px rgba(124,106,247,.08);
+
+          --card-blur:     blur(8px);
+          --divider-anim:  shimmerFast 3s linear infinite;
+
+          --chip-idle-bg:  rgba(255,255,255,.03);
+          --chip-idle-border: rgba(255,255,255,.08);
+          --chip-idle-text:   rgba(255,255,255,.3);
+
+          --model-bg:      rgba(255,255,255,.02);
+          --model-hover-shadow: 0 8px 28px rgba(0,0,0,.4);
+          --model-active-shadow: 0 0 0 3px rgba(124,106,247,.15),0 8px 28px rgba(0,0,0,.4),0 0 30px rgba(124,106,247,.12);
+
+          --phase-hover-shadow: 0 12px 40px rgba(0,0,0,.5),0 0 0 1px rgba(124,106,247,.15)!important;
+          --step-active-anim:   neonPulse 2s ease-in-out infinite;
+
+          --btn-out-bg:    rgba(255,255,255,.04);
+          --btn-out-color: rgba(200,210,255,.75);
+          --btn-out-border:rgba(255,255,255,.1);
+          --btn-ghost-bg:  rgba(255,255,255,.025);
+          --btn-ghost-color:rgba(200,210,255,.3);
+          --btn-ghost-border:rgba(255,255,255,.06);
+
+          --glitch-on:     1;
+          --morph-on:      morphBorder 8s ease-in-out infinite;
+          --neon-reduced:  1;
+          --scanline-on:   1;
+
+          --log-bg:        #0a0e18;
+          --log-text:      rgba(190,210,255,.82);
+          --log-ok:        #10b981;
+          --log-err:       #f87171;
+          --log-warn:      #fbbf24;
+          --log-info:      rgba(167,139,250,.8);
+        }
+
+        /* ══ TEMA MID — azul medianoche premium ════════════════════════ */
+        [data-theme="mid"] {
+          --bg-base:       #0f0f1a;
+          --bg-card:       #161628;
+          --bg-card-glow:  #1a1a2e;
+          --bg-input:      #0d0d1f;
+          --bg-surface-1:  rgba(159,168,218,.06);
+          --bg-surface-2:  rgba(159,168,218,.1);
+
+          --text-primary:  #e8eaf6;
+          --text-secondary:#9fa8da;
+          --text-muted:    rgba(159,168,218,.35);
+
+          --border-base:   rgba(159,168,218,.15);
+          --border-accent: rgba(99,102,241,.6);
+          --border-strong: rgba(159,168,218,.3);
+
+          --shadow-card:   0 4px 32px rgba(0,0,20,.7),inset 0 1px 0 rgba(159,168,218,.06);
+          --shadow-btn:    0 6px 24px rgba(79,70,229,.5);
+          --shadow-glow:   0 0 24px rgba(99,102,241,.4);
+
+          --blob-opacity:  .12;
+          --blob-blur:     90px;
+          --grid-color:    rgba(99,102,241,.04);
+
+          --accent:        #6366f1;
+          --accent-soft:   rgba(99,102,241,.15);
+
+          --prog-bg:       rgba(159,168,218,.08);
+          --prog-shadow:   0 0 16px rgba(79,70,229,.5),0 0 30px rgba(6,182,212,.2);
+          --prog-gradient: linear-gradient(90deg,#4f46e5,#818cf8,#06b6d4,#4f46e5);
+
+          --scrollbar-thumb: linear-gradient(#6366f1,#06b6d4);
+          --scrollbar-hover: linear-gradient(#818cf8,#38bdf8);
+          --scrollbar-track: rgba(159,168,218,.04);
+
+          --input-focus-bg: #12122a;
+          --input-focus-shadow: 0 0 0 3px rgba(99,102,241,.18),0 0 20px rgba(99,102,241,.1);
+
+          --card-blur:     blur(10px);
+          --divider-anim:  shimmerFast 4s linear infinite;
+
+          --chip-idle-bg:  rgba(159,168,218,.05);
+          --chip-idle-border: rgba(159,168,218,.12);
+          --chip-idle-text:   rgba(159,168,218,.45);
+
+          --model-bg:      rgba(159,168,218,.03);
+          --model-hover-shadow: 0 8px 28px rgba(0,0,20,.5);
+          --model-active-shadow: 0 0 0 3px rgba(99,102,241,.2),0 8px 28px rgba(0,0,20,.5),0 0 30px rgba(99,102,241,.15);
+
+          --phase-hover-shadow: 0 12px 40px rgba(0,0,20,.6),0 0 0 1px rgba(99,102,241,.2)!important;
+          --step-active-anim:   neonPulse 2.5s ease-in-out infinite;
+
+          --btn-out-bg:    rgba(159,168,218,.05);
+          --btn-out-color: #9fa8da;
+          --btn-out-border:rgba(159,168,218,.2);
+          --btn-ghost-bg:  rgba(159,168,218,.03);
+          --btn-ghost-color:rgba(159,168,218,.4);
+          --btn-ghost-border:rgba(159,168,218,.1);
+
+          --glitch-on:     1;
+          --morph-on:      morphBorder 10s ease-in-out infinite;
+          --neon-reduced:  1;
+          --scanline-on:   1;
+
+          --log-bg:        #0d0d20;
+          --log-text:      #c5cae9;
+          --log-ok:        #4ade80;
+          --log-err:       #fc8181;
+          --log-warn:      #fcd34d;
+          --log-info:      #a5b4fc;
+        }
+
+        /* ══ TEMA LIGHT — SaaS luminoso profesional ════════════════════ */
+        [data-theme="light"] {
+          --bg-base:       #f8fafc;
+          --bg-card:       #ffffff;
+          --bg-card-glow:  #ffffff;
+          --bg-input:      #f1f5f9;
+          --bg-surface-1:  #f8fafc;
+          --bg-surface-2:  #f1f5f9;
+
+          --text-primary:  #0f172a;
+          --text-secondary:#475569;
+          --text-muted:    #94a3b8;
+
+          --border-base:   #e2e8f0;
+          --border-accent: #c4b5fd;
+          --border-strong: #cbd5e1;
+
+          --shadow-card:   0 1px 3px rgba(0,0,0,.06),0 4px 16px rgba(0,0,0,.06);
+          --shadow-btn:    0 2px 8px rgba(0,0,0,.1),0 1px 2px rgba(0,0,0,.08);
+          --shadow-glow:   none;
+
+          --blob-opacity:  .05;
+          --blob-blur:     40px;
+          --grid-color:    transparent;
+
+          --accent:        #7c3aed;
+          --accent-soft:   rgba(124,58,237,.08);
+
+          --prog-bg:       #e2e8f0;
+          --prog-shadow:   none;
+          --prog-gradient: linear-gradient(90deg,#7c3aed,#a78bfa,#ec4899,#f59e0b,#10b981);
+
+          --scrollbar-thumb: #cbd5e1;
+          --scrollbar-hover: #a78bfa;
+          --scrollbar-track: #f1f5f9;
+
+          --input-focus-bg: #ffffff;
+          --input-focus-shadow: 0 0 0 3px rgba(124,58,237,.12);
+
+          --card-blur:     none;
+          --divider-anim:  none;
+
+          --chip-idle-bg:  #f8fafc;
+          --chip-idle-border: #e2e8f0;
+          --chip-idle-text:   #64748b;
+
+          --model-bg:      #ffffff;
+          --model-hover-shadow: 0 4px 16px rgba(0,0,0,.08);
+          --model-active-shadow: 0 0 0 2px #c4b5fd,0 4px 16px rgba(0,0,0,.08);
+
+          --phase-hover-shadow: 0 4px 20px rgba(0,0,0,.08),0 0 0 1px #e2e8f0!important;
+          --step-active-anim:   none;
+
+          --btn-out-bg:    #ffffff;
+          --btn-out-color: #7c3aed;
+          --btn-out-border:#c4b5fd;
+          --btn-ghost-bg:  #f8fafc;
+          --btn-ghost-color:#64748b;
+          --btn-ghost-border:#e2e8f0;
+
+          --glitch-on:     0;
+          --morph-on:      none;
+          --neon-reduced:  0;
+          --scanline-on:   0;
+
+          --log-bg:        #f8fafc;
+          --log-text:      #334155;
+          --log-ok:        #059669;
+          --log-err:       #dc2626;
+          --log-warn:      #d97706;
+          --log-info:      #6d28d9;
+        }
+
+        /* ══════════════════════════════════════════════════════════════
+           GLOBAL THEME TRANSITION — smooth 300ms switch
+        ══════════════════════════════════════════════════════════════ */
+        *, *::before, *::after {
+          transition:
+            background-color .3s ease,
+            color .3s ease,
+            border-color .3s ease,
+            box-shadow .3s ease,
+            opacity .3s ease;
+        }
+        /* Exclude animation-critical elements from slow transition */
+        .sp, .prog-fill, .btn::before, [class*="blob"] {
+          transition: none !important;
+        }
+
+        /* ══════════════════════════════════════════════════════════════
+           BRUTAL KEYFRAMES — 40+ animations (unchanged)
         ══════════════════════════════════════════════════════════════ */
         @keyframes spin          { to{transform:rotate(360deg)} }
         @keyframes spinR         { to{transform:rotate(-360deg)} }
@@ -3166,133 +3081,139 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
         /* ══════════════════════════════════════════════════════════════
            BASE
         ══════════════════════════════════════════════════════════════ */
-        html,body { margin:0;padding:0;background:#020408 }
-
+        html, body { margin:0; padding:0; background:var(--bg-base); }
         .sp {
-          width:14px;height:14px;
-          border:2.5px solid rgba(167,139,250,.15);
-          border-top-color:#a78bfa;
+          width:14px; height:14px;
+          border:2.5px solid var(--border-base);
+          border-top-color:var(--accent);
           border-right-color:#ec4899;
           border-radius:50%;
           animation:spin .5s linear infinite;
-          display:inline-block;flex-shrink:0;
-          filter:drop-shadow(0 0 4px #a78bfa);
+          display:inline-block; flex-shrink:0;
+          filter:drop-shadow(0 0 4px var(--accent));
+        }
+        [data-theme="light"] .sp {
+          border-color:#e2e8f0;
+          border-top-color:var(--accent);
+          border-right-color:#ec4899;
+          filter:none;
         }
 
         /* ══════════════════════════════════════════════════════════════
-           ROOT — scanning grid + blobs
+           ROOT — grid + blobs
         ══════════════════════════════════════════════════════════════ */
         .root {
-          background: #020408;
+          background:var(--bg-base);
           min-height:400px;
           font-family:'Nunito',system-ui,sans-serif;
-          color:#d4dcf5;
+          color:var(--text-primary);
           position:relative;
           overflow-x:hidden;
+          line-height:1.6;
         }
         .root::after {
           content:'';
-          position:absolute;
-          inset:0;
+          position:absolute; inset:0;
           pointer-events:none;
           background-image:
-            linear-gradient(rgba(124,106,247,.025) 1px,transparent 1px),
-            linear-gradient(90deg,rgba(124,106,247,.025) 1px,transparent 1px);
+            linear-gradient(var(--grid-color) 1px,transparent 1px),
+            linear-gradient(90deg,var(--grid-color) 1px,transparent 1px);
           background-size:48px 48px;
           z-index:0;
         }
-
-        /* Animated plasma blobs */
-        .blob { position:absolute;border-radius:50%;pointer-events:none;filter:blur(70px); }
-        .blob-1 { width:600px;height:600px;background:radial-gradient(#7c3aed,#4f46e5);opacity:.08;top:-200px;left:-200px;animation:bgFloat1 16s ease-in-out infinite; }
-        .blob-2 { width:500px;height:500px;background:radial-gradient(#0ea5e9,#06b6d4);opacity:.06;top:30%;right:-150px;animation:bgFloat2 20s ease-in-out infinite; }
-        .blob-3 { width:400px;height:400px;background:radial-gradient(#10b981,#059669);opacity:.06;bottom:0;left:10%;animation:bgFloat3 14s ease-in-out infinite; }
-        .blob-4 { width:300px;height:300px;background:radial-gradient(#ec4899,#f59e0b);opacity:.05;top:25%;right:20%;animation:bgFloat1 22s ease-in-out infinite reverse; }
-        .blob-5 { width:200px;height:200px;background:radial-gradient(#a78bfa,#7c3aed);opacity:.07;top:60%;left:40%;animation:bgFloat2 12s ease-in-out infinite 3s; }
-
+        .blob {
+          position:absolute; border-radius:50%;
+          pointer-events:none;
+          filter:blur(var(--blob-blur));
+          opacity:var(--blob-opacity);
+        }
+        .blob-1 { width:600px;height:600px;background:radial-gradient(#7c3aed,#4f46e5);top:-200px;left:-200px;animation:bgFloat1 16s ease-in-out infinite; }
+        .blob-2 { width:500px;height:500px;background:radial-gradient(#0ea5e9,#06b6d4);top:30%;right:-150px;animation:bgFloat2 20s ease-in-out infinite; }
+        .blob-3 { width:400px;height:400px;background:radial-gradient(#10b981,#059669);bottom:0;left:10%;animation:bgFloat3 14s ease-in-out infinite; }
+        .blob-4 { width:300px;height:300px;background:radial-gradient(#ec4899,#f59e0b);top:25%;right:20%;animation:bgFloat1 22s ease-in-out infinite reverse; }
+        .blob-5 { width:200px;height:200px;background:radial-gradient(#a78bfa,#7c3aed);top:60%;left:40%;animation:bgFloat2 12s ease-in-out infinite 3s; }
         .wrap { position:relative;z-index:1;max-width:1080px;margin:0 auto;padding:28px 16px 80px }
 
         /* ══════════════════════════════════════════════════════════════
-           CARDS — morphing borders + hover lift
+           CARDS
         ══════════════════════════════════════════════════════════════ */
         .card {
-          background:linear-gradient(135deg,rgba(13,17,23,.95),rgba(8,12,20,.98));
-          border:1px solid rgba(255,255,255,.07);
+          background:var(--bg-card);
+          border:1px solid var(--border-base);
           border-radius:20px; padding:22px;
-          box-shadow:0 4px 32px rgba(0,0,0,.6);
+          box-shadow:var(--shadow-card);
+          backdrop-filter:var(--card-blur);
           transition:all .3s cubic-bezier(.34,1.56,.64,1);
         }
         .card:hover {
           transform:translateY(-2px);
-          border-color:rgba(124,106,247,.25);
-          box-shadow:0 12px 48px rgba(0,0,0,.7),0 0 0 1px rgba(124,106,247,.1);
+          border-color:var(--border-strong);
+          box-shadow:var(--shadow-card), 0 0 0 1px var(--accent-soft);
         }
         .card-glow {
-          background:linear-gradient(135deg,rgba(13,17,23,.95),rgba(10,8,20,.98));
-          border:1px solid rgba(124,106,247,.35);
+          background:var(--bg-card-glow);
+          border:1px solid var(--border-accent);
           border-radius:20px; padding:22px;
-          box-shadow:
-            0 0 0 1px rgba(124,106,247,.08),
-            0 8px 40px rgba(0,0,0,.7),
-            inset 0 1px 0 rgba(124,106,247,.12),
-            0 0 60px rgba(124,106,247,.06);
-          animation:morphBorder 8s ease-in-out infinite;
+          box-shadow:var(--shadow-card), var(--shadow-glow);
+          backdrop-filter:var(--card-blur);
+          animation:var(--morph-on);
+          position:relative;
         }
-
-        /* Running border on card-glow */
         .card-glow::before {
           content:'';
-          position:absolute;
-          inset:-1px;
+          position:absolute; inset:-1px;
           border-radius:21px;
           background:linear-gradient(90deg,#7c3aed,#ec4899,#10b981,#f59e0b,#7c3aed);
           background-size:400% 100%;
           animation:shimmer 4s linear infinite;
-          opacity:.15;
+          opacity:.12;
           z-index:-1;
           pointer-events:none;
         }
-        .card-glow { position:relative; }
+        [data-theme="light"] .card-glow::before { opacity:.06; }
+        [data-theme="light"] .card-glow { box-shadow:var(--shadow-card); }
 
         /* ══════════════════════════════════════════════════════════════
-           BUTTONS — full micro-interaction suite
+           BUTTONS
         ══════════════════════════════════════════════════════════════ */
         .btn {
-          display:inline-flex;align-items:center;gap:8px;
-          padding:11px 22px;border-radius:14px;border:none;
-          font-family:'Nunito',sans-serif;cursor:pointer;
-          font-size:13.5px;font-weight:800;
+          display:inline-flex; align-items:center; gap:8px;
+          padding:11px 22px; border-radius:14px; border:none;
+          font-family:'Nunito',sans-serif; cursor:pointer;
+          font-size:13px; font-weight:800;
           transition:all .2s cubic-bezier(.34,1.56,.64,1);
-          white-space:nowrap;letter-spacing:-.2px;
-          position:relative;overflow:hidden;
-          isolation:isolate;
+          white-space:nowrap; letter-spacing:-.2px;
+          position:relative; overflow:hidden; isolation:isolate;
+          min-height:40px;
         }
-        /* Shimmer sweep on hover */
         .btn::before {
-          content:'';position:absolute;inset:0;
+          content:''; position:absolute; inset:0;
           background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.15) 50%,transparent 60%);
-          transform:translateX(-100%);transition:transform .4s ease;
+          transform:translateX(-100%); transition:transform .4s ease;
         }
         .btn:not(:disabled):hover::before { transform:translateX(100%); }
-        .btn:disabled { opacity:.3;cursor:not-allowed;transform:none!important }
-        .btn:not(:disabled):hover { transform:translateY(-3px) scale(1.04); }
+        .btn:disabled { opacity:.35; cursor:not-allowed; transform:none!important }
+        .btn:not(:disabled):hover  { transform:translateY(-3px) scale(1.04); }
         .btn:not(:disabled):active { transform:translateY(1px) scale(.96); transition-duration:.08s; }
 
         .btn-prime {
           background:linear-gradient(135deg,#7c3aed,#4f46e5,#7c3aed);
           background-size:200% 200%; animation:gradFlow 3s ease infinite;
           color:#fff;
-          box-shadow:0 6px 24px rgba(124,58,237,.45),0 1px 0 rgba(255,255,255,.2) inset;
+          box-shadow:var(--shadow-btn), 0 1px 0 rgba(255,255,255,.2) inset;
         }
         .btn-prime:not(:disabled):hover {
           box-shadow:0 14px 40px rgba(124,58,237,.7),0 0 0 2px rgba(167,139,250,.3),0 1px 0 rgba(255,255,255,.2) inset;
-          animation:neonPulse .8s ease-in-out infinite,gradFlow 3s ease infinite;
-          color:#fff;
         }
+        [data-theme="light"] .btn-prime:not(:disabled):hover {
+          box-shadow:0 8px 24px rgba(124,58,237,.3),0 0 0 2px #c4b5fd;
+        }
+
         .btn-launch {
           background:linear-gradient(135deg,#7c3aed,#9333ea,#ec4899,#7c3aed);
           background-size:300% 300%; animation:gradFlow 2s ease infinite;
-          color:#fff; font-size:15px; font-weight:900; padding:14px 32px; border-radius:16px;
+          color:#fff; font-size:15px; font-weight:900;
+          padding:14px 32px; border-radius:16px;
           box-shadow:0 8px 32px rgba(124,58,237,.55),0 0 0 1px rgba(167,139,250,.2),0 1px 0 rgba(255,255,255,.25) inset;
           letter-spacing:.3px;
         }
@@ -3300,50 +3221,93 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
           box-shadow:0 18px 50px rgba(124,58,237,.8),0 0 0 3px rgba(167,139,250,.4),0 0 80px rgba(236,72,153,.3);
           transform:translateY(-4px) scale(1.05);
         }
+        [data-theme="light"] .btn-launch:not(:disabled):hover {
+          box-shadow:0 8px 28px rgba(124,58,237,.35),0 0 0 2px #c4b5fd;
+        }
         .btn-launch:not(:disabled):active { transform:translateY(2px) scale(.97); }
+
         .btn-out {
-          background:rgba(255,255,255,.04); color:rgba(200,210,255,.75);
-          border:1px solid rgba(255,255,255,.1);
-          box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+          background:var(--btn-out-bg);
+          color:var(--btn-out-color);
+          border:1px solid var(--btn-out-border);
         }
         .btn-out:not(:disabled):hover {
-          background:rgba(124,106,247,.12);border-color:rgba(124,106,247,.5);
-          color:#a78bfa;box-shadow:0 0 20px rgba(124,106,247,.2),inset 0 1px 0 rgba(167,139,250,.1);
+          background:var(--accent-soft);
+          border-color:var(--border-accent);
+          color:var(--accent);
+          box-shadow:var(--shadow-glow);
         }
+        [data-theme="light"] .btn-out:not(:disabled):hover {
+          box-shadow:0 2px 8px rgba(124,58,237,.15);
+        }
+
         .btn-ghost {
-          background:rgba(255,255,255,.025);color:rgba(200,210,255,.3);
-          border:1px solid rgba(255,255,255,.06);
+          background:var(--btn-ghost-bg);
+          color:var(--btn-ghost-color);
+          border:1px solid var(--btn-ghost-border);
         }
         .btn-ghost:not(:disabled):hover {
-          background:rgba(124,106,247,.08);color:#a78bfa;
-          border-color:rgba(124,106,247,.3);
+          background:var(--accent-soft);
+          color:var(--accent);
+          border-color:var(--border-accent);
         }
 
         /* ══════════════════════════════════════════════════════════════
-           PROGRESS — rainbow plasma wave
+           PROGRESS BAR
         ══════════════════════════════════════════════════════════════ */
         .prog-track {
-          height:10px;background:rgba(255,255,255,.05);
-          border-radius:999px;overflow:hidden;
-          box-shadow:inset 0 2px 6px rgba(0,0,0,.4);
+          height:10px;
+          background:var(--prog-bg);
+          border-radius:999px; overflow:hidden;
+          box-shadow:inset 0 2px 6px rgba(0,0,0,.15);
         }
         .prog-fill {
-          height:100%;border-radius:999px;
-          background:linear-gradient(90deg,#7c3aed,#a78bfa,#ec4899,#f59e0b,#10b981,#a78bfa,#7c3aed);
-          background-size:400% 100%; animation:progressWave 1.8s linear infinite;
-          box-shadow:0 0 16px rgba(124,58,237,.6),0 0 30px rgba(236,72,153,.3);
+          height:100%; border-radius:999px;
+          background:var(--prog-gradient);
+          background-size:400% 100%;
+          animation:progressWave 1.8s linear infinite;
+          box-shadow:var(--prog-shadow);
           transition:width .8s cubic-bezier(.4,0,.2,1);
         }
 
         /* ══════════════════════════════════════════════════════════════
-           AGENT CHIPS — glow + bounce on active
+           MODEL CARDS
+        ══════════════════════════════════════════════════════════════ */
+        .model-card {
+          border:1px solid var(--border-base);
+          border-radius:16px; padding:13px 16px;
+          cursor:pointer;
+          transition:all .28s cubic-bezier(.34,1.56,.64,1);
+          background:var(--model-bg);
+          position:relative; overflow:hidden;
+        }
+        .model-card::after {
+          content:''; position:absolute; inset:0; border-radius:16px;
+          background:linear-gradient(135deg,rgba(255,255,255,.04),transparent);
+          opacity:0; transition:opacity .2s;
+        }
+        .model-card:hover {
+          transform:translateY(-3px) scale(1.02);
+          border-color:var(--border-accent);
+          box-shadow:var(--model-hover-shadow);
+        }
+        .model-card:hover::after { opacity:1 }
+        .model-card.active {
+          border-color:var(--border-accent);
+          background:var(--accent-soft);
+          box-shadow:var(--model-active-shadow);
+          transform:scale(1.02);
+        }
+
+        /* ══════════════════════════════════════════════════════════════
+           AGENT CHIPS
         ══════════════════════════════════════════════════════════════ */
         .chip-active { animation:bounceTiny .5s ease-in-out infinite alternate }
         .chip-done   { animation:agentDone .6s cubic-bezier(.34,1.56,.64,1) both }
         .chip-synth  { animation:heartbeat 1.2s ease-in-out infinite }
 
         /* ══════════════════════════════════════════════════════════════
-           CARDS PHASE — slide in staggered
+           PHASE BLOCK
         ══════════════════════════════════════════════════════════════ */
         .phase-block {
           transition:all .3s cubic-bezier(.34,1.56,.64,1);
@@ -3351,102 +3315,136 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
         }
         .phase-block:hover {
           transform:translateY(-3px);
-          box-shadow:0 12px 40px rgba(0,0,0,.5),0 0 0 1px rgba(124,106,247,.15)!important;
+          box-shadow:var(--phase-hover-shadow);
         }
 
         /* ══════════════════════════════════════════════════════════════
-           MASTER PLAN — green neon pulse
+           MASTER PLAN
         ══════════════════════════════════════════════════════════════ */
         .master-panel { animation:masterGlow 2s ease-in-out infinite }
+        [data-theme="light"] .master-panel {
+          animation:none;
+          border-left:3px solid #10b981 !important;
+        }
 
         /* ══════════════════════════════════════════════════════════════
-           MODEL CARDS
+           DIVIDER
         ══════════════════════════════════════════════════════════════ */
-        .model-card {
-          border:1px solid rgba(255,255,255,.07);border-radius:16px;
-          padding:13px 16px;cursor:pointer;
-          transition:all .28s cubic-bezier(.34,1.56,.64,1);
-          background:rgba(255,255,255,.02);
-          position:relative;overflow:hidden;
+        .divider {
+          height:1px; margin:16px 0;
+          background:linear-gradient(90deg,transparent,var(--border-accent),rgba(236,72,153,.2),var(--border-accent),transparent);
+          background-size:200% 100%;
+          animation:var(--divider-anim);
         }
-        .model-card::after {
-          content:'';position:absolute;inset:0;border-radius:16px;
-          background:linear-gradient(135deg,rgba(255,255,255,.04),transparent);
-          opacity:0;transition:opacity .2s;
-        }
-        .model-card:hover { transform:translateY(-3px) scale(1.02);border-color:rgba(124,106,247,.35);box-shadow:0 8px 28px rgba(0,0,0,.4) }
-        .model-card:hover::after { opacity:1 }
-        .model-card.active {
-          border-color:rgba(124,106,247,.6);background:rgba(124,106,247,.12);
-          box-shadow:0 0 0 3px rgba(124,106,247,.15),0 8px 28px rgba(0,0,0,.4),0 0 30px rgba(124,106,247,.12);
-          transform:scale(1.02);
-        }
+        [data-theme="light"] .divider { animation:none; }
 
         /* ══════════════════════════════════════════════════════════════
            MISC
         ══════════════════════════════════════════════════════════════ */
-        .divider {
-          height:1px;margin:16px 0;
-          background:linear-gradient(90deg,transparent,rgba(124,106,247,.4),rgba(236,72,153,.2),rgba(124,106,247,.4),transparent);
-          animation:shimmerFast 3s linear infinite;background-size:200% 100%;
-        }
-        .pill { display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:800 }
+        .pill { display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase; }
         .tab-btn {
-          padding:9px 18px;border:none;cursor:pointer;
-          font-family:'Nunito',sans-serif;font-size:11px;font-weight:800;
-          letter-spacing:.5px;text-transform:uppercase;
-          transition:all .25s cubic-bezier(.34,1.56,.64,1);background:transparent;
+          padding:9px 18px; border:none; cursor:pointer;
+          font-family:'Nunito',sans-serif; font-size:11px; font-weight:800;
+          letter-spacing:.5px; text-transform:uppercase;
+          transition:all .25s cubic-bezier(.34,1.56,.64,1);
+          background:transparent;
+          color:var(--text-secondary);
         }
-        .tab-btn:hover { transform:translateY(-1px); }
+        .tab-btn:hover { transform:translateY(-1px); color:var(--text-primary); }
 
         /* ══════════════════════════════════════════════════════════════
-           INPUTS — animated focus ring
+           INPUTS
         ══════════════════════════════════════════════════════════════ */
-        textarea, input[type=text], input[type=password] {
-          color:#d4dcf5;background:#070b12;
-          border:1px solid rgba(255,255,255,.08);border-radius:14px;
-          font-family:'Fira Code',monospace;font-size:13px;
+        textarea, input[type=text], input[type=password], input[type=email] {
+          color:var(--text-primary);
+          background:var(--bg-input);
+          border:1px solid var(--border-base);
+          border-radius:12px;
+          font-family:'Fira Code',monospace;
+          font-size:13px;
+          line-height:1.7;
+          height:42px;
+          padding:11px 14px;
+          box-sizing:border-box;
           transition:all .25s cubic-bezier(.34,1.56,.64,1);
         }
+        textarea { height:auto; min-height:42px; }
         textarea:focus, input:focus {
           outline:none;
-          border-color:rgba(124,106,247,.6)!important;
-          box-shadow:0 0 0 3px rgba(124,106,247,.12),0 0 20px rgba(124,106,247,.08)!important;
-          background:#0a0e18!important;
-          transform:scale(1.005);
+          border-color:var(--border-accent) !important;
+          box-shadow:var(--input-focus-shadow) !important;
+          background:var(--input-focus-bg) !important;
+          transform:scale(1.002);
         }
-        textarea::placeholder, input::placeholder { color:rgba(255,255,255,.15) }
+        textarea::placeholder, input::placeholder { color:var(--text-muted); }
 
         /* ══════════════════════════════════════════════════════════════
-           SCROLLBAR — neon
+           SCROLLBAR
         ══════════════════════════════════════════════════════════════ */
         ::-webkit-scrollbar { width:5px }
-        ::-webkit-scrollbar-track { background:rgba(255,255,255,.02) }
-        ::-webkit-scrollbar-thumb { background:linear-gradient(#7c3aed,#ec4899);border-radius:3px }
-        ::-webkit-scrollbar-thumb:hover { background:linear-gradient(#a78bfa,#f472b6) }
+        ::-webkit-scrollbar-track { background:var(--scrollbar-track) }
+        ::-webkit-scrollbar-thumb { background:var(--scrollbar-thumb);border-radius:3px }
+        ::-webkit-scrollbar-thumb:hover { background:var(--scrollbar-hover) }
 
         /* ══════════════════════════════════════════════════════════════
-           STEP INDICATOR — glowing active
+           STEP INDICATOR
         ══════════════════════════════════════════════════════════════ */
         .step-active {
-          animation:neonPulse 2s ease-in-out infinite;
-          color:#a78bfa!important;
+          animation:var(--step-active-anim);
+          color:var(--accent) !important;
         }
 
         /* ══════════════════════════════════════════════════════════════
-           AGENT RESULT CONTENT
+           RESULT CONTENT
         ══════════════════════════════════════════════════════════════ */
-        .result-content {
-          animation:fadeDown .3s ease both;
-        }
+        .result-content { animation:fadeDown .3s ease both; }
 
         /* ══════════════════════════════════════════════════════════════
-           SCANLINE EFFECT (subtle, on running state)
+           SCANLINE (only dark/mid)
         ══════════════════════════════════════════════════════════════ */
         .scanline::before {
-          content:'';position:absolute;inset:0;pointer-events:none;z-index:100;
+          content:''; position:absolute; inset:0; pointer-events:none; z-index:100;
           background:linear-gradient(transparent 50%,rgba(124,106,247,.015) 50%);
           background-size:100% 4px;
+          display:var(--scanline-on, block);
+        }
+        [data-theme="light"] .scanline::before { display:none; }
+
+        /* ══════════════════════════════════════════════════════════════
+           LIGHT THEME — overrides that need selector specificity
+        ══════════════════════════════════════════════════════════════ */
+        [data-theme="light"] .card {
+          box-shadow:0 1px 3px rgba(0,0,0,.06),0 4px 16px rgba(0,0,0,.06);
+          backdrop-filter:none;
+        }
+        [data-theme="light"] .card:hover {
+          box-shadow:0 4px 20px rgba(0,0,0,.1);
+        }
+        [data-theme="light"] .phase-block:hover {
+          box-shadow:0 4px 20px rgba(0,0,0,.08),0 0 0 1px #e2e8f0 !important;
+        }
+        [data-theme="light"] .btn-prime:not(:disabled):hover {
+          animation:gradFlow 3s ease infinite;
+        }
+        [data-theme="light"] .step-active {
+          animation:none;
+          border-bottom:2px solid var(--accent) !important;
+          color:var(--accent) !important;
+        }
+
+        /* MID THEME — extra depth */
+        [data-theme="mid"] .card {
+          box-shadow:0 4px 32px rgba(0,0,20,.7),inset 0 1px 0 rgba(159,168,218,.05);
+        }
+        [data-theme="mid"] .btn-prime {
+          background:linear-gradient(135deg,#4f46e5,#6366f1,#4f46e5);
+          background-size:200% 200%; animation:gradFlow 3s ease infinite;
+          box-shadow:0 6px 24px rgba(79,70,229,.5);
+        }
+        [data-theme="mid"] .btn-launch {
+          background:linear-gradient(135deg,#4f46e5,#6366f1,#06b6d4,#4f46e5);
+          background-size:300% 300%; animation:gradFlow 2.5s ease infinite;
+          box-shadow:0 8px 32px rgba(79,70,229,.55),0 0 0 1px rgba(129,140,248,.2);
         }
       `}</style>
 
@@ -3516,7 +3514,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
               {[["🤖","31","agentes","#7c3aed"],["🎯","7","fases","#ec4899"],["🧠","3","modelos","#f59e0b"],["💾","∞","sesiones","#10b981"],["⚡","síntesis","inteligente","#6366f1"]].map(([emoji,n,l,c],idx)=>(
                 <div key={l} style={{
                   display:"flex",alignItems:"center",gap:6,padding:"8px 16px",borderRadius:999,
-                  background:"rgba(255,255,255,.04)",border:"1px solid "+c+"35",
+                  background:"var(--bg-surface-1)",border:"1px solid "+c+"35",
                   boxShadow:"0 3px 14px "+c+"18",
                   animation:"popIn .5s cubic-bezier(.34,1.56,.64,1) both",animationDelay:(idx*.07)+"s",
                 }}>
@@ -3527,45 +3525,24 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
               ))}
             </div>
 
-            {/* User bar */}
-            <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
-              <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 12px",borderRadius:999,background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.08)"}}>
-                <span style={{fontSize:14}}>👤</span>
-                <span style={{fontSize:11,color:"rgba(167,139,250,.8)",fontWeight:700}}>{currentUser?.name}</span>
-                <span style={{fontSize:9,padding:"2px 7px",borderRadius:999,
-                  background:currentUser?.role==="superadmin"?"rgba(245,158,11,.2)":"rgba(124,106,247,.2)",
-                  color:currentUser?.role==="superadmin"?"#f59e0b":"#a78bfa",
-                  fontWeight:800,letterSpacing:.5,textTransform:"uppercase"}}>
-                  {currentUser?.role==="superadmin"?"⭐ superadmin":currentUser?.role}
-                </span>
-              </div>
-              {currentUser?.permissions?.canManageUsers && (
-                <button onClick={onOpenAdmin}
-                  style={{padding:"5px 12px",borderRadius:999,border:"1px solid rgba(124,106,247,.3)",background:"rgba(124,106,247,.08)",color:"#a78bfa",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                  ⚙️ Admin
-                </button>
-              )}
-              <button onClick={onLogout}
-                style={{padding:"5px 12px",borderRadius:999,border:"1px solid rgba(239,68,68,.25)",background:"rgba(239,68,68,.06)",color:"#f87171",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                🚪 Salir
-              </button>
+            {/* Theme switcher + Budget bar + tabs */}
+            <div style={{display:"flex",gap:10,justifyContent:"center",alignItems:"center",flexWrap:"wrap",marginBottom:4}}>
+              <ThemeSwitcher theme={theme} setTheme={setTheme} />
             </div>
-
-            {/* Budget bar + tabs */}
             <div style={{display:"flex",gap:10,justifyContent:"center",alignItems:"center",flexWrap:"wrap"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 14px",borderRadius:999,background:"rgba(255,255,255,.04)",border:"1px solid "+(monthlySpend>MONTHLY_LIMIT*.8?"rgba(239,68,68,.3)":"rgba(16,185,129,.3)"),boxShadow:"0 2px 8px rgba(0,0,0,.06)"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 14px",borderRadius:999,background:"var(--bg-surface-1)",border:"1px solid "+(monthlySpend>MONTHLY_LIMIT*.8?"rgba(239,68,68,.3)":"rgba(16,185,129,.3)"),boxShadow:"0 2px 8px rgba(0,0,0,.06)"}}>
                 <span style={{fontSize:13}}>{monthlySpend>MONTHLY_LIMIT*.8?"🔴":"💚"}</span>
-                <div style={{width:56,height:6,borderRadius:3,background:"rgba(255,255,255,.06)",overflow:"hidden"}}>
+                <div style={{width:56,height:6,borderRadius:3,background:"var(--prog-bg)",overflow:"hidden"}}>
                   <div style={{height:"100%",borderRadius:3,width:Math.min(100,(monthlySpend/MONTHLY_LIMIT)*100)+"%",background:monthlySpend>MONTHLY_LIMIT*.8?"linear-gradient(90deg,#f87171,#ef4444)":"linear-gradient(90deg,#86efac,#22c55e)",transition:"width .5s"}}/>
                 </div>
                 <span style={{fontFamily:"'Fira Code',monospace",fontSize:11,color:monthlySpend>MONTHLY_LIMIT*.8?"#dc2626":"#10b981",fontWeight:700}}>{fmtCost(monthlySpend)}</span>
-                <span style={{fontSize:10,color:"rgba(255,255,255,.35)"}}>/ mes</span>
+                <span style={{fontSize:10,color:"var(--text-muted)"}}>/ mes</span>
               </div>
 
-              <div style={{display:"flex",background:"rgba(255,255,255,.04)",borderRadius:12,border:"1px solid rgba(255,255,255,.08)",overflow:"hidden",boxShadow:"0 2px 10px rgba(139,92,246,.08)"}}>
+              <div style={{display:"flex",background:"var(--bg-surface-1)",borderRadius:12,border:"1px solid var(--border-base)",overflow:"hidden",boxShadow:"0 2px 10px rgba(139,92,246,.08)"}}>
                 {[["run","⚡ Enjambre"],["history","📂 Historial"]].map(([t,l])=>(
                   <button key={t} onClick={()=>setTab(t)} className="tab-btn"
-                    style={{color:tab===t?"#a78bfa":"rgba(255,255,255,.3)",background:tab===t?"rgba(124,106,247,.12)":"transparent",borderBottom:tab===t?"3px solid #7c3aed":"3px solid transparent",padding:"9px 18px"}}>
+                    style={{color:tab===t?"var(--accent)":"var(--text-secondary)",background:tab===t?"var(--accent-soft)":"transparent",borderBottom:tab===t?"3px solid #7c3aed":"3px solid transparent",padding:"9px 18px"}}>
                     {l}{t==="history"&&sessions.length>0&&<span style={{marginLeft:5,fontSize:9,padding:"2px 6px",borderRadius:999,background:"rgba(124,106,247,.12)",color:"#7c3aed",fontWeight:800}}>{sessions.length}</span>}
                   </button>
                 ))}
@@ -3576,11 +3553,11 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
           {/* ── TAB: HISTORIAL ── */}
           {tab==="history" && (
             <div style={{animation:"fadeUp .35s ease"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,padding:"12px 16px",borderRadius:14,background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.07)"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,padding:"12px 16px",borderRadius:14,background:"var(--bg-surface-1)",border:"1px solid var(--border-base)"}}>
                 <span style={{fontSize:20}}>📂</span>
                 <div>
-                  <div style={{fontSize:13,fontWeight:800,color:"#7c3aed"}}>Sesiones guardadas</div>
-                  <div style={{fontSize:10,color:"rgba(255,255,255,.35)"}}>Se persisten automáticamente entre sesiones 💾</div>
+                  <div style={{fontSize:13,fontWeight:800,color:"var(--accent)"}}>Sesiones guardadas</div>
+                  <div style={{fontSize:10,color:"var(--text-muted)"}}>Se persisten automáticamente entre sesiones 💾</div>
                 </div>
               </div>
               {!sessionsLoaded && <div style={{textAlign:"center",padding:40,fontSize:24,animation:"bounce 1s ease infinite"}}>⏳</div>}
@@ -3588,7 +3565,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
                 <div className="card" style={{textAlign:"center",padding:48}}>
                   <div style={{fontSize:48,marginBottom:12,animation:"bounce 2s ease-in-out infinite"}}>📭</div>
                   <div style={{fontSize:14,fontWeight:700,color:"#7c3aed",marginBottom:6}}>Sin sesiones aún</div>
-                  <div style={{fontSize:12,color:"rgba(255,255,255,.35)"}}>Ejecuta el enjambre para guardar automáticamente ✨</div>
+                  <div style={{fontSize:12,color:"var(--text-muted)"}}>Ejecuta el enjambre para guardar automáticamente ✨</div>
                 </div>
               )}
               {sessionsLoaded && sessions.map(s => (
@@ -3603,7 +3580,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
           {tab==="run" && (
             <>
               {/* Agent grid */}
-              <div style={{marginBottom:20,padding:"16px",borderRadius:20,background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.06)",boxShadow:"0 4px 20px rgba(139,92,246,.08)"}}>
+              <div style={{marginBottom:20,padding:"16px",borderRadius:20,background:"var(--bg-surface-1)",border:"1px solid var(--border-base)",boxShadow:"0 4px 20px rgba(139,92,246,.08)"}}>
                 <div style={{fontSize:10,color:"rgba(167,139,250,.6)",fontWeight:800,textTransform:"uppercase",letterSpacing:2,marginBottom:10,textAlign:"center"}}>
                   🤖 {AGENTS.length} agentes especializados
                 </div>
@@ -3670,7 +3647,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
                     </div>
 
                     {showSelector && (
-                      <div style={{marginBottom:12,padding:12,borderRadius:12,background:"#080c14",border:"1px solid rgba(255,255,255,.06)"}}>
+                      <div style={{marginBottom:12,padding:12,borderRadius:12,background:"#080c14",border:"1px solid var(--border-base)"}}>
                         <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:8}}>
                           {PRESETS.map(p=>(
                             <button key={p.id} onClick={()=>setSelectedAgents(p.agents===null?new Set(AGENTS.map(a=>a.id)):new Set(p.agents))} className="btn btn-ghost" style={{padding:"3px 10px",fontSize:10,borderRadius:7}}>
@@ -3687,7 +3664,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
                                 const sel=selectedAgents.has(aid);
                                 return (
                                   <button key={aid} onClick={()=>setSelectedAgents(prev=>{const s=new Set(prev);s.has(aid)?s.delete(aid):s.add(aid);return s;})}
-                                    style={{display:"inline-flex",alignItems:"center",gap:3,padding:"3px 8px",borderRadius:999,fontSize:10,fontWeight:600,cursor:"pointer",border:"1px solid "+(sel?ag.color:"rgba(255,255,255,.07)"),background:sel?ag.color+"14":"transparent",color:sel?ag.color:"rgba(255,255,255,.2)",fontFamily:"inherit",transition:"all .12s"}}>
+                                    style={{display:"inline-flex",alignItems:"center",gap:3,padding:"3px 8px",borderRadius:999,fontSize:10,fontWeight:600,cursor:"pointer",border:"1px solid "+(sel?ag.color:"var(--text-muted)"),background:sel?ag.color+"14":"transparent",color:sel?ag.color:"var(--text-muted)",fontFamily:"inherit",transition:"all .12s"}}>
                                     {ag.icon} {ag.name}
                                   </button>
                                 );
@@ -3720,7 +3697,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
                         )}
                       </button>
                     </div>
-                    <div style={{marginTop:7,fontSize:10,color:"rgba(255,255,255,.2)",textAlign:"center"}}>
+                    <div style={{marginTop:7,fontSize:10,color:"var(--text-muted)",textAlign:"center"}}>
                       ⚡ Ejecuta de inmediato · 🔧 Config agrega tus credenciales para código sin placeholders
                     </div>
                     {error && <div style={{marginTop:8,fontSize:12,color:"#f87171"}}>⚠ {error}</div>}
@@ -3823,7 +3800,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
                               fontSize:10,fontWeight:700,fontFamily:"'Nunito',sans-serif",
                               color:isCurrent?"#a78bfa":isNext?"rgba(255,255,255,.4)":"#10b981"}}>
                               {isDone&&!isCurrent?"✅ ":isCurrent?"🔵 ":isNext?"⏳ ":""}{ph.name}
-                              {isNext&&<span style={{fontSize:9,color:"rgba(255,255,255,.3)"}}>(siguiente)</span>}
+                              {isNext&&<span style={{fontSize:9,color:"var(--text-muted)"}}>(siguiente)</span>}
                             </div>
                           );
                         })}
@@ -3887,7 +3864,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
                       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
                         <div style={{width:4,height:18,borderRadius:2,background:"#a78bfa",boxShadow:"0 0 8px #7c3aed",flexShrink:0}}/>
                         <span style={{fontFamily:"'Syne',sans-serif",fontSize:10,fontWeight:700,letterSpacing:2,color:"#a78bfa",textTransform:"uppercase"}}>Refinar contexto</span>
-                        <span style={{fontSize:10,color:"rgba(255,255,255,.25)"}}>— responde para re-ejecutar con más contexto</span>
+                        <span style={{fontSize:10,color:"var(--text-muted)"}}>— responde para re-ejecutar con más contexto</span>
                       </div>
                       {questions.map((q,i)=>{
                         const isText=q.type==="text", isMulti=q.type==="multiselect";
@@ -3975,7 +3952,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
                           </div>
                           {EXPORT_GROUPS.map((g,gi)=>(
                             <div key={gi} style={{marginBottom:10}}>
-                              <div style={{fontSize:8,fontWeight:700,letterSpacing:3,color:"rgba(255,255,255,.2)",textTransform:"uppercase",fontFamily:"'Syne',sans-serif",marginBottom:6}}>{g.label}</div>
+                              <div style={{fontSize:8,fontWeight:700,letterSpacing:3,color:"var(--text-muted)",textTransform:"uppercase",fontFamily:"'Syne',sans-serif",marginBottom:6}}>{g.label}</div>
                               <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                                 {g.items.map((e,i)=>(
                                   <button key={i} onClick={()=>handleExport(e.label,e.fn,e.file,e.mime)}
@@ -4006,7 +3983,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
                             🚀 Desplegar ahora
                           </button>
                           {(!stackConfig.ghToken && !stackConfig.doToken) && (
-                            <div style={{fontSize:11,color:"rgba(255,255,255,.35)",marginTop:8}}>
+                            <div style={{fontSize:11,color:"var(--text-muted)",marginTop:8}}>
                               Configura GitHub Token o DO Token en 🔧 Config para habilitar el deploy
                             </div>
                           )}
@@ -4047,14 +4024,14 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
                           <div style={{padding:"10px 14px",maxHeight:280,overflowY:"auto",fontFamily:"'Fira Code',monospace",fontSize:11.5,lineHeight:1.9}}>
                             {deployLogs.map((log,i)=>(
                               <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start",animation:"slideInLeft .2s ease both",animationDelay:(i*.03)+"s"}}>
-                                <span style={{color:"rgba(255,255,255,.2)",fontSize:10,flexShrink:0,marginTop:2}}>{log.ts}</span>
+                                <span style={{color:"var(--text-muted)",fontSize:10,flexShrink:0,marginTop:2}}>{log.ts}</span>
                                 <span style={{
                                   color:log.status==="ok"?"#10b981":log.status==="error"?"#f87171":log.status==="warn"?"#fbbf24":"rgba(167,139,250,.8)",
                                   fontSize:10,flexShrink:0,marginTop:2,
                                 }}>{log.status==="ok"?"✅":log.status==="error"?"❌":log.status==="warn"?"⚠️":"🔵"}</span>
                                 <div>
                                   <span style={{color:"rgba(200,210,255,.85)"}}>{log.msg}</span>
-                                  {log.detail && <span style={{color:"rgba(255,255,255,.3)",marginLeft:6,fontSize:10}}>{log.detail.slice(0,80)}</span>}
+                                  {log.detail && <span style={{color:"var(--text-muted)",marginLeft:6,fontSize:10}}>{log.detail.slice(0,80)}</span>}
                                 </div>
                               </div>
                             ))}
@@ -4116,14 +4093,14 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin }) {
               </div>
               <div>
                 <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:800,color:"rgba(255,255,255,.1)"}}>{costEstimate.total>MONTHLY_LIMIT?"Límite mensual cerca":"Resumen de costo"}</div>
-                <div style={{fontSize:10,color:"rgba(255,255,255,.3)",marginTop:2}}>{MODELS[modelKey].label} · {pendingLaunch?.agentList?.length} agentes</div>
+                <div style={{fontSize:10,color:"var(--text-muted)",marginTop:2}}>{MODELS[modelKey].label} · {pendingLaunch?.agentList?.length} agentes</div>
               </div>
             </div>
             <div style={{background:"#080c14",borderRadius:12,padding:14,marginBottom:14}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:8}}>
                 {[["Pase 1",fmtCost(costEstimate.pass1)],["Síntesis",synthEnabled?fmtCost(costEstimate.pass2):"off"]].map(([k,v])=>(
-                  <div key={k} style={{padding:"8px 10px",borderRadius:8,background:"#0d1117",border:"1px solid rgba(255,255,255,.06)"}}>
-                    <div style={{fontSize:9,color:"rgba(255,255,255,.25)",fontFamily:"'Syne',sans-serif",fontWeight:700,letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{k}</div>
+                  <div key={k} style={{padding:"8px 10px",borderRadius:8,background:"#0d1117",border:"1px solid var(--border-base)"}}>
+                    <div style={{fontSize:9,color:"var(--text-muted)",fontFamily:"'Syne',sans-serif",fontWeight:700,letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{k}</div>
                     <div style={{fontFamily:"'Fira Code',monospace",fontSize:14,color:"rgba(200,210,255,.8)"}}>{v}</div>
                   </div>
                 ))}
