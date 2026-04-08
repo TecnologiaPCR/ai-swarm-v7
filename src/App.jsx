@@ -3769,3 +3769,4 @@ function PhaseBlock({ phase, phaseIdx, phaseIds, results, allExpanded, retryAgen
     </div>
   );
 }
+// v7.1 — security hardened: Gemini key via env var
