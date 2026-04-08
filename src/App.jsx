@@ -2965,7 +2965,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
         setCompletedAgents(prev => new Set([...prev,aid]));
         playSound("agentDone"); haptic([15]);
         // Refresh spend counter after each agent (live update)
-        const inTok  = (userMsg.length/4) * model.priceIn;
+        const inTok  = (msg.length/4) * model.priceIn;
         const outTok = (text.length/4) * model.priceOut;
         addStoredSpend(inTok + outTok).then(() => getStoredSpend().then(setMonthlySpend));
       } catch(e) {
