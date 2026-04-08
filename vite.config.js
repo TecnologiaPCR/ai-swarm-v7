@@ -12,6 +12,8 @@ export default defineConfig({
         manualChunks: {
           vendor: ['react', 'react-dom'],
         },
+        entryFileNames: 'assets/[name].[hash].v71.js',
+        chunkFileNames:  'assets/[name].[hash].v71.js',
       },
     },
   },
