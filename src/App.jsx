@@ -268,17 +268,67 @@ async function callModel(modelKey, system, userMsg, agentId, geminiKey = "", att
   const MAX_ATTEMPTS = 5;
   const RETRYABLE = ["exceeded_limit","rate_limit_error","overloaded_error"];
 
-// Anthropic path (Sonnet or Haiku)
+  // Detect if running on DO (production) or locally in Claude artifact
+  // In production, use server-side proxy to avoid CORS
+  const IS_PROD = typeof window !== "undefined" &&
+    !window.location.hostname.includes("claude.ai") &&
+    !window.location.hostname.includes("localhost") &&
+    window.location.hostname !== "";
+
   let res;
   try {
-    res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({
+    if (model.id.startsWith("gemini")) {
+      // ── Gemini path ────────────────────────────────────────────────────────
+      const geminiPayload = {
+        system_instruction: { parts:[{text: system}] },
+        contents:[{role:"user", parts:[{text: userMsg}]}],
+        generationConfig:{ maxOutputTokens: maxTokens, temperature:0.7 },
+      };
+      if (IS_PROD) {
+        // Use server-side proxy
+        res = await fetch("/api/proxy/gemini/"+model.id, {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify(geminiPayload),
+        });
+      } else {
+        // Direct call (Claude artifact environment)
+        if (!geminiKey) throw new Error("Gemini API key no configurada");
+        res = await fetch(model.endpoint+"?key="+geminiKey, {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify(geminiPayload),
+        });
+      }
+      if (!res.ok) {
+        const errBody = await res.json().catch(()=>({}));
+        throw new Error(errBody?.error?.message || "Gemini error " + res.status);
+      }
+      const gData = await res.json();
+      return gData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+
+    } else {
+      // ── Anthropic path (Sonnet / Haiku) ────────────────────────────────────
+      const anthropicPayload = {
         model: model.id, max_tokens: maxTokens,
         system, messages: [{role:"user", content: userMsg}],
-      }),
-    });
+      };
+      if (IS_PROD) {
+        // Use server-side proxy — no API key in browser, no CORS issue
+        res = await fetch("/api/proxy/anthropic", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify(anthropicPayload),
+        });
+      } else {
+        // Direct call (Claude artifact environment — auto-auth injected)
+        res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify(anthropicPayload),
+        });
+      }
+    }
   } catch(e) {
     if (attempt < MAX_ATTEMPTS) {
       await new Promise(r => setTimeout(r, Math.min(4000 * Math.pow(2, attempt), 60000)));

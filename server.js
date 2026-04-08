@@ -275,6 +275,83 @@ http.createServer(async(req,res)=>{
     j200(res,readAudit(500)); return;
   }
 
+  // ── POST /api/proxy/anthropic — server-side proxy (CORS fix) ─────────────
+  if(url==="/api/proxy/anthropic"&&m==="POST"){
+    const p=requireAuth(req,res); if(!p)return;
+    try{
+      const payload=await body(req);
+      const ANTHROPIC_KEY=process.env.ANTHROPIC_API_KEY||"";
+      if(!ANTHROPIC_KEY){
+        res.writeHead(500,{...SEC,"Content-Type":"application/json"});
+        res.end(JSON.stringify({error:"ANTHROPIC_API_KEY not configured"}));
+        return;
+      }
+      const https=require("https");
+      const bodyStr=JSON.stringify(payload);
+      const options={
+        hostname:"api.anthropic.com",path:"/v1/messages",method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "anthropic-version":"2023-06-01",
+          "x-api-key":ANTHROPIC_KEY,
+          "Content-Length":Buffer.byteLength(bodyStr),
+        }
+      };
+      const proxyReq=https.request(options,(proxyRes)=>{
+        let data="";
+        proxyRes.on("data",chunk=>data+=chunk);
+        proxyRes.on("end",()=>{
+          res.writeHead(proxyRes.statusCode,{"Content-Type":"application/json",...SEC});
+          res.end(data);
+        });
+      });
+      proxyReq.on("error",e=>{
+        res.writeHead(502,{"Content-Type":"application/json",...SEC});
+        res.end(JSON.stringify({error:"Proxy error: "+e.message}));
+      });
+      proxyReq.write(bodyStr);
+      proxyReq.end();
+    }catch(e){j400(res,e.message);}
+    return;
+  }
+
+  // ── POST /api/proxy/gemini — server-side proxy for Gemini ────────────────
+  if(url.startsWith("/api/proxy/gemini")&&m==="POST"){
+    const p=requireAuth(req,res); if(!p)return;
+    try{
+      const payload=await body(req);
+      const GEMINI_KEY=process.env.GEMINI_KEY||"";
+      if(!GEMINI_KEY){
+        res.writeHead(500,{...SEC,"Content-Type":"application/json"});
+        res.end(JSON.stringify({error:"GEMINI_KEY not configured"}));
+        return;
+      }
+      const https=require("https");
+      const modelId=url.split("/api/proxy/gemini/")[1]||"gemini-2.0-flash";
+      const apiUrl=`/v1beta/models/${modelId}:generateContent?key=${GEMINI_KEY}`;
+      const bodyStr=JSON.stringify(payload);
+      const options={
+        hostname:"generativelanguage.googleapis.com",path:apiUrl,method:"POST",
+        headers:{"Content-Type":"application/json","Content-Length":Buffer.byteLength(bodyStr)}
+      };
+      const proxyReq=require("https").request(options,(proxyRes)=>{
+        let data="";
+        proxyRes.on("data",chunk=>data+=chunk);
+        proxyRes.on("end",()=>{
+          res.writeHead(proxyRes.statusCode,{"Content-Type":"application/json",...SEC});
+          res.end(data);
+        });
+      });
+      proxyReq.on("error",e=>{
+        res.writeHead(502,{"Content-Type":"application/json",...SEC});
+        res.end(JSON.stringify({error:"Proxy error: "+e.message}));
+      });
+      proxyReq.write(bodyStr);
+      proxyReq.end();
+    }catch(e){j400(res,e.message);}
+    return;
+  }
+
   // GET /api/config
   if(url==="/api/config"&&m==="GET"){
     j200(res,{geminiKey:process.env.GEMINI_KEY||""}); return;
