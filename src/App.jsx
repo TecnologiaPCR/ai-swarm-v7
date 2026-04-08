@@ -11,11 +11,34 @@ function useAuth() {
     const token = localStorage.getItem("swarm_token");
     if (!token) { setReady(true); return; }
     fetch("/api/auth/me", { headers:{ Authorization:"Bearer "+token } })
-      .then(r => r.ok ? r.json() : null)
+      .then(r => {
+        if (r.status === 401) { localStorage.removeItem("swarm_token"); return null; }
+        return r.ok ? r.json() : null;
+      })
       .then(u => { if (u) setUser(u); else localStorage.removeItem("swarm_token"); })
       .catch(() => localStorage.removeItem("swarm_token"))
       .finally(() => setReady(true));
   }, []);
+
+  // Global 401 watcher — kicks out if another session took over
+  useEffect(() => {
+    const orig = window.fetch;
+    window.fetch = async (...args) => {
+      const res = await orig(...args);
+      if (res.status === 401 && user) {
+        const clone = res.clone();
+        clone.json().then(d => {
+          if (d?.error?.includes("otra sesión")) {
+            localStorage.removeItem("swarm_token");
+            setUser(null);
+            alert("⚠️ Tu sesión fue cerrada porque se inició otra sesión con tu cuenta.");
+          }
+        }).catch(()=>{});
+      }
+      return res;
+    };
+    return () => { window.fetch = orig; };
+  }, [user]);
 
   const login = async (email, password) => {
     const r = await fetch("/api/auth/login", {
@@ -260,6 +283,16 @@ function AdminPanel({ user, onClose }) {
                       <button onClick={()=>toggleActive(u)} disabled={u.id===user.id}
                         style={{padding:"5px 12px",borderRadius:8,border:"1px solid "+(u.active?"rgba(239,68,68,.3)":"rgba(16,185,129,.3)"),background:u.active?"rgba(239,68,68,.08)":"rgba(16,185,129,.08)",color:u.active?"#f87171":"#10b981",fontSize:11,fontWeight:700,cursor:u.id===user.id?"not-allowed":"pointer",fontFamily:"inherit",opacity:u.id===user.id?.4:1}}>
                         {u.active?"Desactivar":"Activar"}
+                      </button>
+                      <button
+                        onClick={async()=>{
+                          const r=await fetch("/api/users/"+u.id+"/session/revoke",{method:"POST",headers:hdr});
+                          const d=await r.json();
+                          setMsg(r.ok?"✅ Sesión revocada: "+u.email:"❌ "+d.error);
+                        }}
+                        title="Cerrar sesión activa del usuario"
+                        style={{padding:"5px 10px",borderRadius:8,border:"1px solid rgba(251,191,36,.3)",background:"rgba(251,191,36,.07)",color:"#fbbf24",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                        ⏏ Sesión
                       </button>
                     </div>
                   ))}

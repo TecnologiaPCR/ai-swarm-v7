@@ -53,15 +53,23 @@ function readAudit(n=300) {
 }
 
 // ── JWT ───────────────────────────────────────────────────────────────────
-const sign  = u  => jwt.sign({id:u.id,email:u.email,role:u.role,name:u.name},JWT_SECRET,{expiresIn:"12h"});
+const sign  = (u, sid) => jwt.sign({id:u.id,email:u.email,role:u.role,name:u.name,sid},JWT_SECRET,{expiresIn:"12h"});
 const verify= t  => { try{return jwt.verify(t,JWT_SECRET);}catch{return null;} };
 function getToken(req) {
   const a=(req.headers["authorization"]||""); if(a.startsWith("Bearer "))return a.slice(7);
   const c=(req.headers["cookie"]||"").match(/swarm_token=([^;]+)/); return c?c[1]:null;
 }
 function requireAuth(req,res,perm=null) {
-  const p=verify(getToken(req)); if(!p){res.writeHead(401,{...SEC,"Content-Type":"application/json"});res.end('{"error":"No autorizado"}');return null;}
-  const u=findUser(p.email); if(!u||!u.active){res.writeHead(401,{...SEC,"Content-Type":"application/json"});res.end('{"error":"No autorizado"}');return null;}
+  const p=verify(getToken(req));
+  if(!p){res.writeHead(401,{...SEC,"Content-Type":"application/json"});res.end('{"error":"No autorizado"}');return null;}
+  const u=findUser(p.email);
+  if(!u||!u.active){res.writeHead(401,{...SEC,"Content-Type":"application/json"});res.end('{"error":"No autorizado"}');return null;}
+  // ── SINGLE SESSION: reject if token's sid doesn't match active session ──
+  if(u.activeSession !== p.sid){
+    res.writeHead(401,{...SEC,"Content-Type":"application/json"});
+    res.end('{"error":"Sesión expirada — otra sesión fue iniciada"}');
+    return null;
+  }
   if(perm&&!ROLES[p.role]?.[perm]){res.writeHead(403,{...SEC,"Content-Type":"application/json"});res.end('{"error":"Permisos insuficientes"}');return null;}
   return p;
 }
@@ -102,9 +110,14 @@ http.createServer(async(req,res)=>{
       const ok=await bcrypt.compare(password,u.password);
       if(!ok){audit(u.id,email,"LOGIN_FAIL","wrong password",clientIp);res.writeHead(401,{...SEC,"Content-Type":"application/json"});res.end('{"error":"Credenciales inválidas"}');return;}
       const users=readUsers(),idx=users.findIndex(x=>x.id===u.id);
-      users[idx].lastLogin=new Date().toISOString();users[idx].loginCount=(users[idx].loginCount||0)+1;writeUsers(users);
-      audit(u.id,email,"LOGIN_OK","role:"+u.role,clientIp);
-      j200(res,{token:sign(u),user:{id:u.id,email:u.email,name:u.name,role:u.role,permissions:ROLES[u.role]}});
+      const sid=crypto.randomBytes(16).toString("hex");
+      users[idx].lastLogin=new Date().toISOString();
+      users[idx].loginCount=(users[idx].loginCount||0)+1;
+      users[idx].activeSession=sid;
+      writeUsers(users);
+      const prevSid=u.activeSession;
+      audit(u.id,email,"LOGIN_OK","role:"+u.role+(prevSid?"| prev session invalidated":""),clientIp);
+      j200(res,{token:sign(u,sid),user:{id:u.id,email:u.email,name:u.name,role:u.role,permissions:ROLES[u.role]}});
     }catch(e){j400(res,e.message);}
     return;
   }
@@ -112,6 +125,9 @@ http.createServer(async(req,res)=>{
   // POST /api/auth/logout
   if(url==="/api/auth/logout"&&m==="POST"){
     const p=requireAuth(req,res); if(!p)return;
+    // Clear active session so token is immediately invalidated
+    const usersL=readUsers(),idxL=usersL.findIndex(u=>u.id===p.id);
+    if(idxL>=0){usersL[idxL].activeSession=null;writeUsers(usersL);}
     audit(p.id,p.email,"LOGOUT","",clientIp); j200(res,{ok:true}); return;
   }
 
@@ -184,6 +200,21 @@ http.createServer(async(req,res)=>{
     return;
   }
 
+  // POST /api/users/:id/session/revoke — admin force-logout a user
+  const revokeMatch=url.match(/^\/api\/users\/([a-f0-9-]+)\/session\/revoke$/);
+  if(revokeMatch&&m==="POST"){
+    const p=requireAuth(req,res,"canManageUsers"); if(!p)return;
+    const tid=revokeMatch[1];
+    const users=readUsers(),idx=users.findIndex(u=>u.id===tid);
+    if(idx<0)return j404(res);
+    const email=users[idx].email;
+    users[idx].activeSession=null;
+    writeUsers(users);
+    audit(p.id,p.email,"SESSION_REVOKED","target:"+email,clientIp);
+    j200(res,{ok:true,message:"Sesión revocada para "+email});
+    return;
+  }
+
   // POST /api/users/:id/delete
   const delMatch=url.match(/^\/api\/users\/([a-f0-9-]+)\/delete$/);
   if(delMatch&&m==="POST"){
@@ -220,7 +251,11 @@ http.createServer(async(req,res)=>{
   const isAsset=url.startsWith("/assets/")||url==="/favicon.svg";
   if(!isAsset){
     const tok=getToken(req);
-    if(!tok||!verify(tok)){
+    const payload=tok?verify(tok):null;
+    // Validate sid against DB (single session enforcement)
+    const staticUser=payload?findUser(payload.email):null;
+    const validSession=staticUser&&staticUser.active&&staticUser.activeSession===payload?.sid;
+    if(!payload||!validSession){
       const html=(req.headers["accept"]||"").includes("text/html");
       if(html){res.writeHead(302,{"Location":"/"});res.end();}
       else{res.writeHead(401,{...SEC,"Content-Type":"application/json"});res.end('{"error":"No autorizado"}');}
