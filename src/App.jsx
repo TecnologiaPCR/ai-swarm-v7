@@ -77,17 +77,20 @@ const MODELS = {
     priceIn:  3.00 / 1e6,
     priceOut: 15.00 / 1e6,
     color: "#7c6af7",
+    maxOut: 8000,   // Sonnet 4 supports up to 8192 output tokens
   },
   haiku: {
     id: "claude-haiku-4-5-20251001",
     label: "Haiku 4.5",
     badge: "Rápido · económico",
+    maxOut: 4096,   // Haiku 4.5 hard limit,
     priceIn:  0.80 / 1e6,
     priceOut: 4.00 / 1e6,
     color: "#10b981",
   },
   gemini: {
     id: "gemini-2.0-flash",
+    maxOut: 8192,   // Gemini Flash supports 8192 output tokens
     label: "Gemini Flash",
     badge: "−70% costo",
     priceIn:  0.10 / 1e6,
@@ -267,7 +270,8 @@ async function addStoredSpend(amount) {
 // ─────────────────────────────────────────────────────────────────────────────
 async function callModel(modelKey, system, userMsg, agentId, geminiKey = "", attempt = 0) {
   const model = MODELS[modelKey] || MODELS.sonnet;
-  const maxTokens = AGENT_MAX_TOKENS[agentId] || 1200;
+  const modelMaxOut = model.maxOut || 4096;
+  const maxTokens = Math.min(AGENT_MAX_TOKENS[agentId] || 1200, modelMaxOut);
   const MAX_ATTEMPTS = 4;
   const RETRYABLE_ANTHROPIC = ["exceeded_limit","rate_limit_error","overloaded_error"];
 
@@ -281,8 +285,9 @@ async function callModel(modelKey, system, userMsg, agentId, geminiKey = "", att
   const callAnthropic = async () => {
     // When called as fallback, use haiku for speed/cost
     const fallbackModel = MODELS.haiku;
+    const fallbackMax = Math.min(maxTokens, fallbackModel.maxOut || 4096);
     const payload = {
-      model: fallbackModel.id, max_tokens: maxTokens,
+      model: fallbackModel.id, max_tokens: fallbackMax,
       system, messages: [{role:"user", content: userMsg}],
     };
     let r;
@@ -3386,8 +3391,11 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
         + "\n\n══════════════════════════════════════\n"
         + "Con base en TODO lo anterior, genera el PLAN MAESTRO DE EJECUCIÓN completo.";
 
+      // Orchestrator always uses best available model
+      // Prefer Sonnet for quality; Haiku if that's what user selected (tokens capped to 4096)
+      const orchModelKey = modelKey === "gemini" ? "sonnet" : modelKey;
       const plan = await callModel(
-        modelKey, ORCHESTRATOR_SYSTEM, orchestratorMsg, "orchestrator", geminiKey
+        orchModelKey, ORCHESTRATOR_SYSTEM, orchestratorMsg, "orchestrator", geminiKey
       );
       setMasterPlan(plan);
       playSound("masterPlan"); haptic([30,15,30,15,60]);
