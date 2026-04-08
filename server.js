@@ -102,6 +102,17 @@ function requireAuth(req,res,perm=null) {
   return p;
 }
 
+// Relaxed auth for proxy endpoints — only validates JWT signature + user active
+// Does NOT check activeSession (survives server restarts/redeploys)
+function requireAuthProxy(req,res) {
+  const p=verify(getToken(req));
+  if(!p){res.writeHead(401,{...SEC,"Content-Type":"application/json"});res.end('{"error":"No autorizado"}');return null;}
+  const u=findUser(p.email);
+  if(!u||!u.active){res.writeHead(401,{...SEC,"Content-Type":"application/json"});res.end('{"error":"No autorizado"}');return null;}
+  if(!ROLES[p.role]?.canRunSwarm){res.writeHead(403,{...SEC,"Content-Type":"application/json"});res.end('{"error":"Rol sin acceso al enjambre"}');return null;}
+  return p;
+}
+
 // ── Rate limiter ──────────────────────────────────────────────────────────
 const rl=new Map();
 function rateOk(ip){
@@ -277,7 +288,7 @@ http.createServer(async(req,res)=>{
 
   // ── POST /api/proxy/anthropic — server-side proxy (CORS fix) ─────────────
   if(url==="/api/proxy/anthropic"&&m==="POST"){
-    const p=requireAuth(req,res); if(!p)return;
+    const p=requireAuthProxy(req,res); if(!p)return;
     try{
       const payload=await body(req);
       const ANTHROPIC_KEY=process.env.ANTHROPIC_API_KEY||"";
@@ -317,7 +328,7 @@ http.createServer(async(req,res)=>{
 
   // ── POST /api/proxy/gemini — server-side proxy for Gemini ────────────────
   if(url.startsWith("/api/proxy/gemini")&&m==="POST"){
-    const p=requireAuth(req,res); if(!p)return;
+    const p=requireAuthProxy(req,res); if(!p)return;
     try{
       const payload=await body(req);
       const GEMINI_KEY=process.env.GEMINI_KEY||"";
