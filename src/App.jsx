@@ -505,6 +505,7 @@ function buildStackContext(cfg) {
   if (f.n8nDeployWebhook) c += "N8N_DEPLOY_WEBHOOK="+f.n8nDeployWebhook+"\\n";
   if (f.mssqlHost) c += "ARCH_DATA=MSSQL-onprem-via-n8n,DO-Postgres,DO-Redis\\n";
   c += "\\nREGLA ABSOLUTA: Usa estos valores reales. Nunca escribas YOUR_KEY, placeholder, TODO.";
+  return c;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2965,8 +2966,9 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
         setCompletedAgents(prev => new Set([...prev,aid]));
         playSound("agentDone"); haptic([15]);
         // Refresh spend counter after each agent (live update)
-        const inTok  = (msg.length/4) * model.priceIn;
-        const outTok = (text.length/4) * model.priceOut;
+        const _m = MODELS[modelKey] || MODELS.sonnet;
+        const inTok  = (msg.length/4) * _m.priceIn;
+        const outTok = (text.length/4) * _m.priceOut;
         addStoredSpend(inTok + outTok).then(() => getStoredSpend().then(setMonthlySpend));
       } catch(e) {
         const errMsg = agent.name+": "+e.message;
