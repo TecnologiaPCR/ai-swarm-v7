@@ -2275,13 +2275,13 @@ export default function AISwarm() {
 
   // Config
   const [modelKey, setModelKey]               = useState("sonnet");
-  // Gemini key loaded at runtime from server — never in bundle
+  // Gemini key — loaded at runtime, never hardcoded
   const [geminiKey, setGeminiKey]             = useState("");
   useEffect(() => {
     fetch("/api/config")
-      .then(r => r.json())
+      .then(r => r.ok ? r.json() : {})
       .then(cfg => { if (cfg.geminiKey) setGeminiKey(cfg.geminiKey); })
-      .catch(() => {}); // silent — Gemini just won't work without key
+      .catch(() => {}); // silent — fallback to empty
   }, []);
   const [synthEnabled, setSynthEnabled]       = useState(false);
   const [selectedAgents, setSelectedAgents]   = useState(() => new Set(AGENTS.map(a => a.id)));
@@ -3575,7 +3575,7 @@ export default function AISwarm() {
                               <div style={{fontSize:8,fontWeight:700,letterSpacing:3,color:"rgba(255,255,255,.2)",textTransform:"uppercase",fontFamily:"'Syne',sans-serif",marginBottom:6}}>{g.label}</div>
                               <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                                 {g.items.map((e,i)=>(
-                                  <button key={i}
+                                  <button key={i} onClick={()=>handleExport(e.label,e.fn,e.file,e.mime)}
                                     style={{display:"inline-flex",alignItems:"center",gap:5,padding:"7px 14px",borderRadius:9,background:e.bg,color:"#fff",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"'DM Sans',sans-serif",border:"none",transition:"all .15s",boxShadow:"0 2px 12px "+e.bg+"45",letterSpacing:.2}}
                                     onMouseEnter={ev=>{ev.currentTarget.style.filter="brightness(1.2) saturate(1.3)";ev.currentTarget.style.transform="translateY(-3px) scale(1.06)";ev.currentTarget.style.boxShadow="0 12px 30px "+e.bg+"80";playSound("click");haptic([8]);}}
                                     onMouseLeave={ev=>{ev.currentTarget.style.filter="none";ev.currentTarget.style.transform="none";ev.currentTarget.style.boxShadow="0 2px 12px "+e.bg+"45";}}
@@ -3703,7 +3703,7 @@ export default function AISwarm() {
         />
       )}
 
-      {/* ── BUDGET MODAL ── */}
+      {/* ── BUDGET MODAL ── */}}
       {showBudgetModal&&costEstimate&&(
         <div style={{position:"fixed",inset:0,background:"rgba(3,5,12,.88)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div style={{background:"#0d1117",border:"1px solid rgba(124,106,247,.4)",borderRadius:20,padding:26,maxWidth:400,width:"100%",boxShadow:"0 0 60px rgba(124,106,247,.12)",animation:"fadeUp .2s ease"}}>
@@ -3775,4 +3775,3 @@ function PhaseBlock({ phase, phaseIdx, phaseIds, results, allExpanded, retryAgen
     </div>
   );
 }
-// v7.1 — security hardened: Gemini key via env var
