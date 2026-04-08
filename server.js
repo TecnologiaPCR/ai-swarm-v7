@@ -209,6 +209,13 @@ http.createServer(async(req,res)=>{
     j200(res,{geminiKey:process.env.GEMINI_KEY||""}); return;
   }
 
+  // ── Health check (public — for DO health probe) ──────────────────────────
+  if (url==="/health"||url==="/api/health") {
+    res.writeHead(200,{"Content-Type":"application/json",...SEC});
+    res.end(JSON.stringify({ok:true,ts:new Date().toISOString()}));
+    return;
+  }
+
   // ── Static files ─────────────────────────────────────────────────────────
   const isAsset=url.startsWith("/assets/")||url==="/favicon.svg";
   if(!isAsset){
