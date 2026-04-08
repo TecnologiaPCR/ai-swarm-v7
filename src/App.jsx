@@ -106,6 +106,7 @@ const AGENT_MAX_TOKENS = {
   security:2400,api_integrator:2400,qa:2400,chaos:2200,bi:2200,
   ml:2000,i18n:2000,dpo:2000,uiux:2000,copywriter:2000,
   cx:1800,growth:1800,pm:1800,ba:1800,revenue:1600,performance:1600,
+  orchestrator:4000,
   legal:1400,research:1400,prompt_lib:1400,maintenance:2400,
   product_owner:2200,manual_writer:2400,roadmap_eng:2000,post_launch:1800,disruptor:3200,
 };
@@ -2895,21 +2896,24 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
     setMasterPlanLoading(true);
     try {
       // Build a comprehensive context with ALL agent outputs
+      // Cap each agent output and total context to avoid 400 token errors
       const agentOutputs = Object.entries(allResults)
         .filter(([,r])=>!r.isError && r.text)
         .map(([id,r])=>{
           const ag = AGENTS.find(a=>a.id===id);
-          const best = r.synth || r.text;
-          return "=== "+ag?.icon+" "+ag?.name+" ===\n"+best.slice(0,1800);
+          const best = (r.synth || r.text || "").trim();
+          return "=== "+ag?.icon+" "+ag?.name+" ===\n"+best.slice(0,900);
         }).join("\n\n");
 
-      const orchestratorMsg = enriched
-        + "\n\n══════════════════════════════════════\nOUTPUT COMPLETO DE LOS AGENTES ESPECIALIZADOS:\n══════════════════════════════════════\n"
-        + agentOutputs.slice(0, 28000)
-        + "\n\nAhora consolida todo lo anterior en el plan maestro ejecutable.";
+      // Keep total user message under ~18K chars to stay within context limits
+      const ideaSnippet = enriched.slice(0, 1500);
+      const orchestratorMsg = ideaSnippet
+        + "\n\n══ OUTPUTS DE LOS "+Object.keys(allResults).length+" AGENTES ══\n"
+        + agentOutputs.slice(0, 16000)
+        + "\n\nSintetiza en el plan maestro ejecutable.";
 
       const plan = await callModel(
-        modelKey, ORCHESTRATOR_SYSTEM, orchestratorMsg, "pm", geminiKey
+        modelKey, ORCHESTRATOR_SYSTEM, orchestratorMsg, "orchestrator", geminiKey
       );
       setMasterPlan(plan);
       playSound("masterPlan"); haptic([30,15,30,15,60]);
