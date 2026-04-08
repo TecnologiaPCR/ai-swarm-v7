@@ -288,17 +288,31 @@ http.createServer(async(req,res)=>{
   }
 
   // ── Static files ─────────────────────────────────────────────────────────
-  const isAsset=url.startsWith("/assets/")||url==="/favicon.svg";
-  if(!isAsset){
+  // Public routes — always serve without auth check
+  // The React app handles the login screen client-side
+  const isAsset      = url.startsWith("/assets/") || url==="/favicon.svg";
+  const isRootOrSPA  = url==="/" || url==="/index.html";
+
+  if(!isAsset && !isRootOrSPA){
     const tok=getToken(req);
     const payload=tok?verify(tok):null;
-    // Validate sid against DB (single session enforcement)
     const staticUser=payload?findUser(payload.email):null;
     const validSession=staticUser&&staticUser.active&&staticUser.activeSession===payload?.sid;
     if(!payload||!validSession){
-      const html=(req.headers["accept"]||"").includes("text/html");
-      if(html){res.writeHead(302,{"Location":"/"});res.end();}
-      else{res.writeHead(401,{...SEC,"Content-Type":"application/json"});res.end('{"error":"No autorizado"}');}
+      // Only redirect HTML page requests, not API calls
+      const isApi=(req.headers["accept"]||"").includes("application/json")||url.startsWith("/api/");
+      if(!isApi){
+        // Serve index.html so React router can show the login screen
+        const idxPath=require("path").join(DIST,"index.html");
+        fs.readFile(idxPath,(e,d)=>{
+          if(e){res.writeHead(404);res.end("Not found");return;}
+          res.writeHead(200,{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-cache, no-store, must-revalidate",...SEC});
+          res.end(d);
+        });
+      } else {
+        res.writeHead(401,{...SEC,"Content-Type":"application/json"});
+        res.end('{"error":"No autorizado"}');
+      }
       return;
     }
   }
