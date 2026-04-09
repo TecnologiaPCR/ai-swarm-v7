@@ -1588,6 +1588,60 @@ RESPONDE SOLO JSON válido, sin markdown, sin texto extra:
 }`;
 
 // Master orchestrator: consolidates ALL agent outputs into ONE executable plan
+const ROUTER_SYSTEM = `Eres el Router Inteligente del AI Swarm Lab. Tu trabajo: dado un requerimiento, decidir con PRECISIÓN qué agentes son necesarios y si hay roles que faltan.
+
+AGENTES DISPONIBLES (31):
+pm, ba, revenue, architect, prompt_eng, dba, api_integrator, security, uiux, cx, copywriter, growth, devops, performance, i18n, ml, bi, qa, chaos, prompt_lib, dpo, legal, research, disruptor, deploy_eng, maintenance, product_owner, tech_writer, manual_writer, roadmap_eng, post_launch
+
+REGLAS DE DECISIÓN:
+- SIEMPRE incluir: pm, ba, architect, prompt_eng, qa, security, devops
+- Solo incluir si aplica:
+  * revenue → si hay modelo de negocio, monetización o SaaS
+  * ml → solo si hay predicción, recomendaciones, clasificación, NLP real
+  * i18n → solo si hay múltiples idiomas o RTL explícito
+  * bi → solo si hay dashboards, KPIs o reportes analíticos
+  * cx → solo si hay producto de cara al cliente final
+  * dpo/legal → solo si hay datos personales o cumplimiento regulatorio
+  * growth → solo si hay estrategia de adquisición o marketing
+  * chaos → solo si hay sistemas distribuidos o alta disponibilidad requerida
+  * copywriter → solo si hay interfaces de usuario con texto
+  * performance → solo si hay SLAs de performance o sitio web público
+  * i18n → solo si hay requisito multiidioma
+  * manual_writer → solo si hay usuarios finales no técnicos
+  * roadmap_eng → solo si es producto con versiones múltiples
+  * post_launch → siempre útil para proyectos de producción
+  * disruptor → solo si se pide innovación o modelo de negocio nuevo
+  * prompt_lib → solo si el proyecto usa IA extensivamente
+  * maintenance → solo si hay SLAs de operaciones post-deploy
+  * research → solo si hay tecnologías emergentes o comparación de opciones
+  * api_integrator → solo si hay integraciones con terceros
+  * dba → solo si hay base de datos relacional o esquema complejo
+  * uiux → solo si hay interfaz visual
+  * product_owner → solo si hay backlog y múltiples stakeholders
+  * tech_writer → siempre útil para proyectos con código
+
+AGENTES DINÁMICOS (crear si faltan):
+Si el requerimiento necesita un perfil especializado que NO está en la lista, debes crearlo.
+Ejemplos: blockchain_engineer, iot_specialist, ml_ops, data_engineer, mobile_dev, game_designer, etc.
+
+RESPONDE SOLO JSON VÁLIDO. Sin markdown, sin texto extra:
+{
+  "include": ["pm","ba","architect",...],
+  "exclude": ["ml","i18n",...],
+  "exclude_reasons": {"ml": "no hay predicción ni ML en el req", "i18n": "app interna en español"},
+  "dynamic_agents": [
+    {
+      "id": "blockchain_eng",
+      "name": "Blockchain Engineer",
+      "icon": "⛓️",
+      "color": "#F59E0B",
+      "desc": "Diseña contratos inteligentes y arquitectura blockchain",
+      "phase": "design",
+      "systemPrompt": "Eres el Blockchain Engineer del AI Swarm. Tu rol: diseñar contratos inteligentes (Solidity/Rust), arquitectura on-chain/off-chain, tokenomics, y wallets. Entrega: contratos comentados, deployment scripts, arquitectura de nodos. Responde en español con código ejecutable."
+    }
+  ]
+}`;
+
 const PHASE_QUESTION_SYSTEM = `Eres el coordinador inteligente del AI Swarm Lab.
 Los agentes de la fase INTAKE (PM, BA, Revenue Strategist, Prompt Engineer) acaban de analizar el requerimiento.
 
@@ -3220,7 +3274,9 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
   const [elapsed, setElapsed]         = useState(0);
   const [interviewRound, setInterviewRound] = useState(1);
   const [autoDetect, setAutoDetect]   = useState(null);   // inferred project metadata
-  const [masterPlan, setMasterPlan]   = useState(null);   // orchestrator final output
+  const [masterPlan, setMasterPlan]   = useState(null);
+  const [routerPlan, setRouterPlan]   = useState(null);   // which agents + dynamic agents
+  const [dynamicAgents, setDynamicAgents] = useState([]); // created at runtime   // orchestrator final output
   const [masterPlanLoading, setMasterPlanLoading] = useState(false);
 
   // Agent tracking
@@ -3280,7 +3336,8 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
 
   const timerRef       = useRef(null);
   const outputRef      = useRef(null);
-  const allResultsRef  = useRef({});
+  const allResultsRef      = useRef({});
+  const runtimeAgentsRef   = useRef([...AGENTS]); // includes dynamic agents
   const cancelRef      = useRef(false);   // BUG-002: cancel flag
 
   // Load sessions + spend on mount
@@ -3464,7 +3521,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
   const runInitialPass = useCallback(async (agentIds, enriched) => {
     setActiveAgents(new Set(agentIds));
     const tasks = agentIds.map(aid => async () => {
-      const agent = AGENTS.find(a=>a.id===aid); if(!agent) return;
+      const agent = (runtimeAgentsRef.current || AGENTS).find(a=>a.id===aid); if(!agent) return;
       try {
         // Check cancel flag before doing any work
         if (cancelRef.current) {
@@ -3486,7 +3543,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
         const msg = ctx
           ? enriched+"\n\nOUTPUT DE AGENTES PREVIOS:\n"+ctx.slice(0,10000)+"\n\nEntrega TU output según tu rol. Usa los valores reales de la configuración. No repitas lo que otros ya entregaron. Solo tu artefacto específico."
           : enriched+"\n\nEres el primer agente en analizar esto. Entrega tu artefacto según tu rol.";
-        const prompt = AGENT_PROMPTS[aid] || "Eres un experto especializado. Entrega artefactos ejecutables en español.";
+        const prompt = agent.systemPrompt || AGENT_PROMPTS[aid] || "Eres un experto especializado. Entrega artefactos ejecutables en español.";
         const text = await callModel(modelKey, prompt, msg, aid, geminiKey);
         allResultsRef.current[aid] = {text, synth:null, isError:false};
         setResults(r => ({...r,[aid]:{text,synth:null,isError:false}}));
@@ -3558,6 +3615,30 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
   }, []);
 
 
+
+  // ── Smart Router: decides which agents to run + creates dynamic agents ──
+  const runRouter = useCallback(async (enriched, allAgentIds) => {
+    try {
+      const agentList = AGENTS.map(a => `${a.id} (${a.name}): ${a.desc}`).join("\n");
+      const msg = `REQUERIMIENTO:\n${enriched.slice(0, 2000)}\n\nDECIDE qué agentes son necesarios y si hay roles faltantes.`;
+      const raw = await callModel(modelKey, ROUTER_SYSTEM, msg, "pm", geminiKey);
+      const clean = raw.replace(/```json\s*/g,"").replace(/```\s*/g,"").trim();
+      const s = clean.slice(clean.indexOf("{"), clean.lastIndexOf("}")+1);
+      const plan = JSON.parse(s);
+
+      // Validate include list
+      const validIds = new Set(AGENTS.map(a => a.id));
+      const include = (plan.include || allAgentIds).filter(id => validIds.has(id));
+      const excludeReasons = plan.exclude_reasons || {};
+      const dynamicAgents = plan.dynamic_agents || [];
+
+      return { include, excludeReasons, dynamicAgents };
+    } catch(e) {
+      console.warn("Router failed, using all agents:", e.message);
+      return { include: allAgentIds, excludeReasons: {}, dynamicAgents: [] };
+    }
+  }, [modelKey, geminiKey]);
+
   // Generate questions after a phase completes — uses agent outputs as context
   const generatePhaseQuestions = useCallback(async (phaseId, phaseAgentIds, enriched) => {
     try {
@@ -3628,16 +3709,56 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
     setResults({}); setCompletedAgents(new Set()); setFailedAgents(new Set());
     setActiveAgents(new Set()); setSynthAgents(new Set());
     setCurrentPhase(-1); setSynthPhase(false); setError(null);
-    cancelRef.current = false;   // reset cancel on new launch
+    setRouterPlan(null);
+    cancelRef.current = false;
     allResultsRef.current = {};
+    runtimeAgentsRef.current = runtimeAgents;
+
+    // ── Smart Router: decide which agents are needed + create dynamic ones ──
+    const allIds = agentList;
+    const routing = await runRouter(enriched, allIds);
+    setRouterPlan(routing);
+
+    // Register dynamic agents into runtime registry
+    const runtimeAgents = [...AGENTS];
+    for (const da of routing.dynamicAgents) {
+      if (!runtimeAgents.find(a => a.id === da.id)) {
+        runtimeAgents.push({
+          id: da.id, name: da.name, icon: da.icon || "🤖",
+          color: da.color || "#7c3aed", desc: da.desc || "",
+          systemPrompt: da.systemPrompt || `Eres ${da.name}. Analiza el requerimiento y entrega tu artefacto especializado en español.`,
+          dynamic: true,
+        });
+      }
+    }
+    setDynamicAgents(runtimeAgents.filter(a => a.dynamic));
+
+    // Build final agent set: router's include list + dynamic agents
+    const routedIds = new Set([
+      ...routing.include,
+      ...routing.dynamicAgents.map(a => a.id),
+    ]);
+    // Always ensure core agents run
+    ["pm","ba","architect","prompt_eng","qa","security","devops"].forEach(id => routedIds.add(id));
+    const agentSet = new Set([...routedIds].filter(id => agentList.includes(id) || routing.dynamicAgents.find(a=>a.id===id)));
+
+    // Build PHASES with dynamic agents injected into design phase
+    const runtimePhases = PHASES.map(p => {
+      if (p.id === "design" && routing.dynamicAgents.length > 0) {
+        return { ...p, agents: [...p.agents, ...routing.dynamicAgents.map(a=>a.id)] };
+      }
+      return p;
+    });
+
     const doneSet = new Set();
-    const agentSet = new Set(agentList);
 
     // Run phases SEQUENTIALLY with approval gate between each
-    for (let pi=0; pi<PHASES.length; pi++) {
+    for (let pi=0; pi<runtimePhases.length; pi++) {
       setCurrentPhase(pi);
-      let ids = [...PHASES[pi].agents];
+      let ids = [...runtimePhases[pi].agents];
       if (PROMPT_ENG_INJECT.includes(pi) && !ids.includes("prompt_eng")) ids.push("prompt_eng");
+      // Resolve dynamic agents in this phase
+      ids = ids.filter(id => agentSet.has(id) || runtimeAgents.find(a=>a.id===id&&a.dynamic));
       ids = [...new Set(ids)].filter(id=>agentSet.has(id)&&!doneSet.has(id));
       if (!ids.length) continue;
 
@@ -3668,11 +3789,11 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
       }
 
       // Approval gate — wait for user to review phase output before continuing
-      const isLastPhase = pi === PHASES.length - 1;
+      const isLastPhase = pi === runtimePhases.length - 1;
       if (!isLastPhase) {
         if (cancelRef.current) break;
         playSound("phaseDone"); haptic([20,10,20,10,40]);
-        await waitForPhaseApproval(pi, PHASES[pi].name);
+        await waitForPhaseApproval(pi, runtimePhases[pi].name);
         if (cancelRef.current) break;
       }
     }
@@ -3701,7 +3822,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
     getStoredSpend().then(setMonthlySpend);
   }, [buildEnrichedIdea, synthEnabled, runInitialPass, runSynthesisPass,
       idea, modelKey, elapsed, waitForPhaseApproval, runAutoDetect,
-      generatePhaseQuestions, askAgentQuestions]);
+      generatePhaseQuestions, askAgentQuestions, runRouter]);
 
   const requestLaunch = useCallback(async (mode="full") => {
     if (!idea.trim()) return;
@@ -3771,7 +3892,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
   }, [enrichedIdea, modelKey, geminiKey]);
 
   const reset = () => {
-    setStep("input"); setIdea(""); setQuestions([]); setAnswers({}); setInterviewLoading(false); setAgentQuestions(null); setResults({});
+    setStep("input"); setIdea(""); setQuestions([]); setAnswers({}); setInterviewLoading(false); setAgentQuestions(null); setRouterPlan(null); setDynamicAgents([]); setResults({});
     setCompletedAgents(new Set()); setFailedAgents(new Set()); setActiveAgents(new Set());
     setSynthAgents(new Set()); setError(null); setInterviewRound(1); setEnrichedIdea("");
     setSynthPhase(false); allResultsRef.current = {};
@@ -5113,6 +5234,56 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
                       ))}
                     </div>
                   )}
+
+                  {/* ── Router Plan: excluded agents + dynamic agents ── */}
+                  {routerPlan && (
+                    <div style={{marginBottom:12,animation:"slideInLeft .4s ease both"}}>
+                      {/* Excluded agents */}
+                      {routerPlan.exclude && routerPlan.exclude.length > 0 && (
+                        <div style={{display:"flex",gap:6,flexWrap:"wrap",padding:"8px 12px",
+                          borderRadius:10,background:"var(--bg-surface-1)",
+                          border:"1px solid var(--border-base)",marginBottom:6}}>
+                          <span style={{fontSize:10,fontWeight:800,color:"var(--text-muted)",
+                            textTransform:"uppercase",letterSpacing:1,alignSelf:"center"}}>
+                            ⏭ Omitidos:
+                          </span>
+                          {routerPlan.exclude.map(id => {
+                            const ag = [...AGENTS,...dynamicAgents].find(a=>a.id===id);
+                            const reason = routerPlan.excludeReasons?.[id];
+                            return (
+                              <span key={id} title={reason||""}
+                                style={{padding:"3px 9px",borderRadius:999,fontSize:10,
+                                  fontWeight:700,background:"rgba(239,68,68,.07)",
+                                  border:"1px solid rgba(239,68,68,.15)",
+                                  color:"#f87171",cursor:"default"}}>
+                                {ag?.icon} {ag?.name||id}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {/* Dynamic agents created */}
+                      {dynamicAgents.length > 0 && (
+                        <div style={{display:"flex",gap:6,flexWrap:"wrap",padding:"8px 12px",
+                          borderRadius:10,background:"rgba(16,185,129,.05)",
+                          border:"1px solid rgba(16,185,129,.2)"}}>
+                          <span style={{fontSize:10,fontWeight:800,color:"#10b981",
+                            textTransform:"uppercase",letterSpacing:1,alignSelf:"center"}}>
+                            ✨ Agentes creados:
+                          </span>
+                          {dynamicAgents.map(ag => (
+                            <span key={ag.id} title={ag.desc}
+                              style={{padding:"3px 9px",borderRadius:999,fontSize:10,
+                                fontWeight:700,background:"rgba(16,185,129,.1)",
+                                border:"1px solid rgba(16,185,129,.3)",
+                                color:"#10b981",cursor:"default"}}>
+                              {ag.icon} {ag.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}}
 
                   {/* Toolbar */}
                   {Object.keys(results).length>0&&(
