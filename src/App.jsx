@@ -5334,7 +5334,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
                         </div>
                       )}
                     </div>
-                  )}}
+                  )}
 
                   {/* Toolbar */}
                   {Object.keys(results).length>0&&(
@@ -5345,17 +5345,28 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
                     </div>
                   )}
 
-                  {/* Results by phase */}
+                                    {/* Results by phase */}
                   <div ref={outputRef}>
                     {PHASES.map((phase,pi)=>{
+                      // Include agents from this phase + any dynamic agents whose results exist
                       let ids=[...phase.agents];
                       if(PROMPT_ENG_INJECT.includes(pi)&&!ids.includes("prompt_eng"))ids.push("prompt_eng");
                       ids=[...new Set(ids)].filter(id=>results[id]);
                       if(!ids.length) return null;
                       return (
-                        <PhaseBlock key={phase.id} phase={phase} phaseIdx={pi} phaseIds={ids} results={results} allExpanded={allExpanded} retryAgent={retryAgent}/>
+                        <PhaseBlock key={phase.id} phase={phase} phaseIdx={pi} phaseIds={ids}
+                          results={results} allExpanded={allExpanded} retryAgent={retryAgent}/>
                       );
                     })}
+                    {/* Dynamic agents results — shown after all phases */}
+                    {dynamicAgents.filter(a=>results[a.id]).length>0&&(
+                      <PhaseBlock
+                        key="dynamic"
+                        phase={{id:"dynamic",name:"Agentes Dinámicos",color:"#10b981",agents:dynamicAgents.map(a=>a.id)}}
+                        phaseIdx={PHASES.length}
+                        phaseIds={dynamicAgents.filter(a=>results[a.id]).map(a=>a.id)}
+                        results={results} allExpanded={allExpanded} retryAgent={retryAgent}/>
+                    )}
                   </div>
 
                   {/* ── REFINE PANEL — disabled, replaced by pre-flight interview ── */}
