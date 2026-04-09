@@ -3760,7 +3760,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
 
     // Register dynamic agents into runtime registry
     const runtimeAgents = [...AGENTS];
-    for (const da of routing.dynamicAgents) {
+    for (const da of (routing.dynamicAgents || [])) {
       if (!runtimeAgents.find(a => a.id === da.id)) {
         runtimeAgents.push({
           id: da.id, name: da.name, icon: da.icon || "🤖",
@@ -3771,19 +3771,32 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
       }
     }
     setDynamicAgents(runtimeAgents.filter(a => a.dynamic));
+    runtimeAgentsRef.current = runtimeAgents;
 
-    // Build final agent set: router's include list + dynamic agents
-    const routedIds = new Set([
-      ...routing.include,
-      ...routing.dynamicAgents.map(a => a.id),
-    ]);
-    // Always ensure core agents run
-    ["pm","ba","architect","prompt_eng","qa","security","devops"].forEach(id => routedIds.add(id));
-    const agentSet = new Set([...routedIds].filter(id => agentList.includes(id) || routing.dynamicAgents.find(a=>a.id===id)));
+    // Build agent set — ALWAYS include all selectedAgents, router only ADDS exclusions as hints
+    // Core agents always run regardless of router decision
+    const CORE = new Set(["pm","ba","architect","prompt_eng","qa","security","devops"]);
+    const routerInclude = new Set(routing.include || []);
+    const routerExclude = new Set(routing.exclude || []);
+
+    // agentSet = all selected agents MINUS router exclusions (but never remove core)
+    const agentSet = new Set(
+      allIds.filter(id => {
+        if (CORE.has(id)) return true;           // always run core
+        if (routerInclude.has(id)) return true;  // router explicitly included
+        if (routerExclude.has(id)) return false; // router excluded
+        return true;                             // default: run if selected
+      })
+    );
+    // Add dynamic agents from router
+    for (const da of (routing.dynamicAgents || [])) agentSet.add(da.id);
+
+    // Fallback: if agentSet somehow empty, use all selected agents
+    if (agentSet.size === 0) allIds.forEach(id => agentSet.add(id));
 
     // Build PHASES with dynamic agents injected into design phase
     const runtimePhases = PHASES.map(p => {
-      if (p.id === "design" && routing.dynamicAgents.length > 0) {
+      if (p.id === "design" && (routing.dynamicAgents||[]).length > 0) {
         return { ...p, agents: [...p.agents, ...routing.dynamicAgents.map(a=>a.id)] };
       }
       return p;
@@ -3796,9 +3809,8 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
       setCurrentPhase(pi);
       let ids = [...runtimePhases[pi].agents];
       if (PROMPT_ENG_INJECT.includes(pi) && !ids.includes("prompt_eng")) ids.push("prompt_eng");
-      // Resolve dynamic agents in this phase
-      ids = ids.filter(id => agentSet.has(id) || runtimeAgents.find(a=>a.id===id&&a.dynamic));
-      ids = [...new Set(ids)].filter(id=>agentSet.has(id)&&!doneSet.has(id));
+      // Filter to agents that should run in this iteration
+      ids = [...new Set(ids)].filter(id => agentSet.has(id) && !doneSet.has(id));
       if (!ids.length) continue;
 
       await runInitialPass(ids, enriched);
