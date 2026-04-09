@@ -1588,6 +1588,22 @@ RESPONDE SOLO JSON válido, sin markdown, sin texto extra:
 }`;
 
 // Master orchestrator: consolidates ALL agent outputs into ONE executable plan
+const PHASE_QUESTION_SYSTEM = `Eres el coordinador inteligente del AI Swarm Lab.
+Los agentes de la fase INTAKE (PM, BA, Revenue Strategist, Prompt Engineer) acaban de analizar el requerimiento.
+
+Tu misión: basándote en sus outputs, identifica las BRECHAS DE INFORMACIÓN más críticas que impiden a los siguientes agentes (Arquitecto, UX, DBA, DevOps, etc.) producir código ejecutable.
+
+REGLAS:
+- Genera entre 3 y 5 preguntas MUY específicas basadas en lo que los agentes encontraron
+- Solo haz preguntas cuya respuesta cambie fundamentalmente la arquitectura o implementación
+- Si los agentes ya tienen toda la información necesaria, responde con array vacío []
+- Prioriza: datos específicos faltantes (nombres de tablas, APIs reales, credenciales, URLs)
+- NO repitas preguntas ya respondidas en el intake inicial
+
+RESPONDE SOLO JSON. Sin markdown, sin backticks:
+[{"id":"pq1","question":"pregunta muy concreta","type":"select|multiselect|text","options":["Op1","Op2","Otro"],"why":"qué cambia en el código"}]
+Si no hay brechas críticas: []`;
+
 const ORCHESTRATOR_SYSTEM = `Eres el Orquestador Maestro del AI Swarm. Tu trabajo es sintetizar el output de todos los agentes en UN documento ejecutable que el equipo puede usar directamente.
 
 RECIBIRÁS: el requerimiento original + el output completo de todos los agentes especializados.
@@ -3541,6 +3557,34 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
     playSound("error"); haptic([20,10,20]);
   }, []);
 
+
+  // Generate questions after a phase completes — uses agent outputs as context
+  const generatePhaseQuestions = useCallback(async (phaseId, phaseAgentIds, enriched) => {
+    try {
+      // Build context from completed agents
+      const agentCtx = phaseAgentIds
+        .filter(id => allResultsRef.current[id] && !allResultsRef.current[id].isError)
+        .map(id => {
+          const ag = AGENTS.find(a => a.id === id);
+          const txt = (allResultsRef.current[id].text || "").slice(0, 1200);
+          return `[${ag?.icon} ${ag?.name}]\n${txt}`;
+        }).join("\n\n");
+
+      if (!agentCtx.trim()) return null;
+
+      const msg = `REQUERIMIENTO ORIGINAL:\n${enriched.slice(0, 800)}\n\n`
+        + `OUTPUT DE LOS AGENTES DE INTAKE:\n${agentCtx}\n\n`
+        + `Identifica brechas de información críticas para los siguientes agentes.`;
+
+      const raw = await callModel(modelKey, PHASE_QUESTION_SYSTEM, msg, "pm", geminiKey);
+      const parsed = parseInterviewJSON(raw);
+      if (!Array.isArray(parsed) || parsed.length === 0) return null;
+      return parsed;
+    } catch {
+      return null; // silent — never block the swarm
+    }
+  }, [modelKey, geminiKey]);
+
   // Mid-swarm agent questions — pauses execution until user answers
   const askAgentQuestions = useCallback(async (agentId, questions) => {
     return new Promise(resolve => {
@@ -3572,7 +3616,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
     setMasterPlan(null); setAutoDetect(null); setPhaseApproval(null);
 
     // Use preAnswers directly (React state may not be updated yet)
-    const enriched = preAnswers
+    let enriched = preAnswers
       ? buildEnrichedIdea(true, preAnswers)
       : buildEnrichedIdea();
     setEnrichedIdea(enriched);
@@ -3599,14 +3643,37 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
 
       await runInitialPass(ids, enriched);
       ids.forEach(id=>doneSet.add(id));
+      if (cancelRef.current) break;
+
+      // ── After Intake (phase 0): generate & ask follow-up questions ──────
+      if (pi === 0 && !cancelRef.current) {
+        const phaseQs = await generatePhaseQuestions(PHASES[pi].id, ids, enriched);
+        if (phaseQs && phaseQs.length > 0) {
+          playSound("click"); haptic([10, 5, 10]);
+          // Pause swarm — show questions to user
+          const extraAnswers = await askAgentQuestions("intake-followup", phaseQs);
+          if (extraAnswers && Object.keys(extraAnswers).length > 0) {
+            // Inject extra context into enriched for all subsequent phases
+            const extraCtx = phaseQs.map(q => {
+              const a = extraAnswers[q.id];
+              if (!a || (Array.isArray(a) ? a.length === 0 : !String(a).trim())) return null;
+              return `- ${q.question}\n  → ${Array.isArray(a) ? a.join(", ") : a}`;
+            }).filter(Boolean).join("\n");
+            if (extraCtx) {
+              enriched = enriched + "\n\nCONTEXTO ADICIONAL (post-intake):\n" + extraCtx;
+              setEnrichedIdea(enriched);
+            }
+          }
+        }
+      }
 
       // Approval gate — wait for user to review phase output before continuing
       const isLastPhase = pi === PHASES.length - 1;
       if (!isLastPhase) {
-        if (cancelRef.current) break;   // cancelled during phase
+        if (cancelRef.current) break;
         playSound("phaseDone"); haptic([20,10,20,10,40]);
         await waitForPhaseApproval(pi, PHASES[pi].name);
-        if (cancelRef.current) break;   // cancelled during approval wait
+        if (cancelRef.current) break;
       }
     }
 
@@ -3633,7 +3700,8 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
     addStoredSpend(estimatedCost);
     getStoredSpend().then(setMonthlySpend);
   }, [buildEnrichedIdea, synthEnabled, runInitialPass, runSynthesisPass,
-      idea, modelKey, elapsed, waitForPhaseApproval, loadRefineQuestions, runAutoDetect]);
+      idea, modelKey, elapsed, waitForPhaseApproval, runAutoDetect,
+      generatePhaseQuestions, askAgentQuestions]);
 
   const requestLaunch = useCallback(async (mode="full") => {
     if (!idea.trim()) return;
@@ -4533,8 +4601,11 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
       {/* ── AGENT QUESTION MODAL (mid-swarm pause) ── */}
       {agentQuestions && (
         <AgentQuestionModal
-          agentName={AGENTS.find(a=>a.id===agentQuestions.agentId)?.name || agentQuestions.agentId}
-          agentIcon={AGENTS.find(a=>a.id===agentQuestions.agentId)?.icon || "🤖"}
+          agentName={agentQuestions.agentId === "intake-followup" 
+            ? "Preguntas de seguimiento — Fase 0 completada"
+            : (AGENTS.find(a=>a.id===agentQuestions.agentId)?.name || agentQuestions.agentId)}
+          agentIcon={agentQuestions.agentId === "intake-followup" ? "🔍"
+            : (AGENTS.find(a=>a.id===agentQuestions.agentId)?.icon || "🤖")}
           questions={agentQuestions.questions}
           onSubmit={submitAgentAnswers}
         />
