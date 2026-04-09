@@ -2320,76 +2320,75 @@ function AgentChip({ agent, state }) {
 
   if (isSkip) return null;
 
-  const accentColor = isActive ? agent.color || "#7c3aed"
-                    : isDone   ? "#10b981"
-                    : isFail   ? "#dc2626"
-                    : null;
-
-  const bg     = isActive ? agent.color+"18" || "rgba(124,106,247,.1)"
+  const col    = agent.color || "#7c3aed";
+  const bg     = isActive ? col+"18"
                : isDone   ? "rgba(16,185,129,.06)"
                : isFail   ? "rgba(239,68,68,.06)"
                : "var(--bg-card)";
-  const border = isActive ? agent.color || "#c084fc"
+  const border = isActive ? col
                : isDone   ? "#86efac"
                : isFail   ? "rgba(239,68,68,.3)"
                : "var(--border-base)";
-  const nameColor = isActive ? agent.color || "#a78bfa"
-                  : isDone   ? "#10b981"
-                  : isFail   ? "#dc2626"
-                  : "var(--text-primary)";
-  const shadow = isActive ? "0 0 0 2px "+agent.color+"44, 0 4px 16px "+agent.color+"33"
+  const nameCol= isActive ? col
+               : isDone   ? "#10b981"
+               : isFail   ? "#dc2626"
+               : "var(--text-primary)";
+  const descCol= isActive ? col+"cc"
+               : isDone   ? "rgba(16,185,129,.75)"
+               : isFail   ? "rgba(239,68,68,.6)"
+               : "var(--text-muted)";
+  const shadow = isActive ? "0 0 0 2px "+col+"44,0 4px 16px "+col+"33"
                : isDone   ? "0 2px 8px rgba(16,185,129,.2)"
                : isFail   ? "0 2px 8px rgba(239,68,68,.2)"
                : "0 1px 4px rgba(0,0,0,.06)";
 
   return (
     <div style={{
-      display:"flex", flexDirection:"column", alignItems:"flex-start",
-      gap:2, padding:"8px 10px", borderRadius:12, width:148,
+      display:"flex", flexDirection:"column", gap:4,
+      padding:"10px 11px 10px 14px",
+      borderRadius:12, minWidth:0,
       background:bg, border:"1.5px solid "+border,
       boxShadow:shadow,
       transition:"all .3s cubic-bezier(.34,1.56,.64,1)",
       animation:isActive?"chipBounce .6s ease-in-out infinite alternate":isDone?"chipPop .4s cubic-bezier(.34,1.56,.64,1) both":"none",
       fontFamily:"'Nunito',sans-serif",
-      cursor:"default",
-      position:"relative", overflow:"hidden",
+      cursor:"default", position:"relative",
     }}>
-      {/* Active glow strip on left */}
-      {isActive && (
-        <div style={{position:"absolute",left:0,top:0,bottom:0,width:3,
-          background:agent.color||"#7c3aed",borderRadius:"12px 0 0 12px",
-          animation:"pulse 1s ease-in-out infinite"}}/>
+      {/* Active glow strip */}
+      {(isActive||isDone||isFail) && (
+        <div style={{
+          position:"absolute", left:0, top:0, bottom:0, width:3,
+          background: isActive ? col : isDone ? "#10b981" : "#dc2626",
+          borderRadius:"12px 0 0 12px",
+          animation:isActive?"pulse 1s ease-in-out infinite":"none",
+        }}/>
       )}
-      {/* Header row: icon + name + status */}
-      <div style={{display:"flex",alignItems:"center",gap:5,width:"100%"}}>
+
+      {/* Name row */}
+      <div style={{display:"flex",alignItems:"center",gap:5}}>
         <span style={{
-          fontSize:15, lineHeight:1, flexShrink:0,
-          animation:isActive?"wiggle 1s ease-in-out infinite":isDone?"agentDone .6s cubic-bezier(.34,1.56,.64,1) both":"none",
+          fontSize:14, lineHeight:1, flexShrink:0,
+          animation:isActive?"wiggle 1s ease-in-out infinite":isDone?"agentDone .6s both":"none",
         }}>{agent.icon}</span>
         <span style={{
-          fontSize:11, fontWeight:800, color:nameColor,
-          flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
-          lineHeight:1.2,
+          fontSize:11, fontWeight:800, color:nameCol,
+          flex:1, lineHeight:1.2,
         }}>{agent.name}</span>
         {isDone   && <span style={{fontSize:10,flexShrink:0}}>✅</span>}
         {isFail   && <span style={{fontSize:10,flexShrink:0}}>❌</span>}
         {isActive && <span className="sp" style={{
           flexShrink:0, width:10, height:10,
-          borderTopColor:agent.color||"#c084fc",
-          borderColor:(agent.color||"#7c3aed")+"33",
+          borderTopColor:col, borderColor:col+"33",
         }}/>}
       </div>
-      {/* Description */}
+
+      {/* Description — full text, no truncation */}
       {agent.desc && (
         <div style={{
-          fontSize:9, color: isActive ? agent.color+"cc" : isDone ? "rgba(16,185,129,.7)" : "var(--text-muted)",
-          lineHeight:1.3, paddingLeft:20,
-          overflow:"hidden",
-          display:"-webkit-box",
-          WebkitLineClamp:2,
-          WebkitBoxOrient:"vertical",
-          maxWidth:"100%",
+          fontSize:9.5, color:descCol, lineHeight:1.45,
           fontWeight: isActive ? 700 : 500,
+          paddingLeft:1,
+          wordBreak:"break-word",
         }}>{agent.desc}</div>
       )}
     </div>
@@ -5023,7 +5022,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
                 <div style={{fontSize:10,color:"rgba(167,139,250,.6)",fontWeight:800,textTransform:"uppercase",letterSpacing:2,marginBottom:10,textAlign:"center"}}>
                   🤖 {AGENTS.length} agentes especializados
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(148px,1fr))",gap:6}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:8}}>
                   {[...AGENTS,...dynamicAgents].map((ag,i)=>(
                     <div key={ag.id} style={{animation:"popIn .5s cubic-bezier(.34,1.56,.64,1) both",animationDelay:(i*.025)+"s"}}>
                       <AgentChip agent={ag} state={agentState(ag.id)}/>
