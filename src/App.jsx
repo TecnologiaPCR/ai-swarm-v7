@@ -3295,24 +3295,24 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
   }, []);
 
   // ── Build enriched idea (idea + any refine answers) ─────────────────────────
-  const buildEnrichedIdea = useCallback((withAnswers = true) => {
+  const buildEnrichedIdea = useCallback((withAnswers = true, overrideAnswers = null) => {
     let s = "REQUERIMIENTO:\n" + idea.trim();
-    if (withAnswers && Object.keys(answers).length > 0) {
-      const hasRealAnswers = Object.values(answers).some(a =>
+    const effectiveAnswers = overrideAnswers || answers;
+    if (withAnswers && Object.keys(effectiveAnswers).length > 0) {
+      const hasRealAnswers = Object.values(effectiveAnswers).some(a =>
         a && (Array.isArray(a) ? a.length > 0 : String(a).trim().length > 0));
       if (hasRealAnswers) {
         s += "\n\nCONTEXTO ACLARADO POR EL USUARIO:";
         // If we have question objects, use them for context
         if (questions.length > 0) {
           questions.forEach(q => {
-            const a = answers[q.id];
+            const a = effectiveAnswers[q.id];
             if (a && (Array.isArray(a) ? a.length > 0 : String(a).trim().length > 0)) {
               s += "\n- " + q.question + "\n  → " + (Array.isArray(a) ? a.join(", ") : a);
             }
           });
         } else {
-          // Flat answers from interview without question objects
-          Object.entries(answers).forEach(([k, v]) => {
+          Object.entries(effectiveAnswers).forEach(([k, v]) => {
             if (v && String(v).trim()) s += "\n- " + k + ": " + v;
           });
         }
@@ -3358,7 +3358,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
       // Build phase-grouped summary — 1000 chars per agent, organized by phase
       let phasedContext = "";
       let totalChars = 0;
-      const MAX_TOTAL = 20000;
+      const MAX_TOTAL = 12000; // safe for all models
 
       for (const [phaseId, phaseLabel] of Object.entries(PHASE_LABELS)) {
         const phase = PHASES.find(p => p.id === phaseId);
@@ -3372,15 +3372,15 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
           const ag = AGENTS.find(a => a.id === aid);
           const r  = allResults[aid];
           const best = (r.synth || r.text || "").trim();
-          // Extract first 800 chars — the most important output is always first
-          const snippet = best.slice(0, 800);
+          // Extract first 500 chars — first paragraph is always the key insight
+          const snippet = best.slice(0, 500);
           phaseText += "\n["+ag?.icon+" "+ag?.name+"]\n"+snippet+"\n";
           totalChars += snippet.length;
         }
         phasedContext += phaseText;
       }
 
-      const ideaSnippet = enriched.slice(0, 2000);
+      const ideaSnippet = enriched.slice(0, 1000);
       const successCount = Object.values(allResults).filter(r => !r.isError).length;
 
       const orchestratorMsg = ideaSnippet
@@ -3400,7 +3400,32 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
       setMasterPlan(plan);
       playSound("masterPlan"); haptic([30,15,30,15,60]);
     } catch(e) {
-      setMasterPlan("Error generando plan maestro: "+e.message);
+      console.error("Orchestrator error:", e);
+      // If 400 from token limit, retry with even less context
+      if (e.message.includes("400") || e.message.includes("max_tokens")) {
+        try {
+          // Minimal retry: just top 3 agents per phase, 200 chars each
+          const miniContext = Object.entries(allResults)
+            .filter(([,r])=>!r.isError && r.text)
+            .slice(0,10)
+            .map(([id,r])=>{
+              const ag=AGENTS.find(a=>a.id===id);
+              return "["+ag?.name+"] "+(r.text||"").slice(0,200);
+            }).join("\n");
+          const miniMsg = enriched.slice(0,500)
+            +"\n\nRESUMEN DE AGENTES:\n"+miniContext
+            +"\n\nGenera el PLAN MAESTRO DE EJECUCIÓN ejecutable y concreto.";
+          const orchModel = modelKey==="gemini"?"sonnet":modelKey;
+          const plan2 = await callModel(orchModel, ORCHESTRATOR_SYSTEM, miniMsg, "orchestrator", geminiKey);
+          setMasterPlan(plan2);
+          playSound("masterPlan"); haptic([30,15,30,15,60]);
+          return;
+        } catch(e2) {
+          setMasterPlan("Plan maestro no disponible. Revisa los resultados de cada agente arriba.");
+        }
+      } else {
+        setMasterPlan("Error generando plan maestro: "+e.message);
+      }
     } finally {
       setMasterPlanLoading(false);
     }
@@ -3542,11 +3567,14 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
   }, []);
 
   // ── executeLaunch (must be before requestLaunch) ──────────────────────────
-  const executeLaunch = useCallback(async (mode, agentList, estimatedCost) => {
+  const executeLaunch = useCallback(async (mode, agentList, estimatedCost, preAnswers=null) => {
     setShowBudgetModal(false); setInterviewLoading(false);
     setMasterPlan(null); setAutoDetect(null); setPhaseApproval(null);
 
-    const enriched = buildEnrichedIdea();
+    // Use preAnswers directly (React state may not be updated yet)
+    const enriched = preAnswers
+      ? buildEnrichedIdea(true, preAnswers)
+      : buildEnrichedIdea();
     setEnrichedIdea(enriched);
     setStep("running");
     playSound("launch"); haptic([40, 20, 40]);
@@ -4488,12 +4516,11 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
           questions={questions}
           loading={interviewLoading}
           onConfirm={(answeredMap) => {
-            // Merge answers into state then launch
-            setAnswers(answeredMap);
+            setAnswers(answeredMap); // also save to state for UI
             const { mode, agentList, cost } = pendingLaunch || { mode:"full", agentList:[...selectedAgents], cost:0 };
             const needsConfirm = (monthlySpend + (cost||0)) > MONTHLY_LIMIT;
             if (needsConfirm) { setShowBudgetModal(true); }
-            else executeLaunch(mode, agentList, cost || 0);
+            else executeLaunch(mode, agentList, cost || 0, answeredMap); // pass directly
           }}
           onBack={() => { setStep("input"); setInterviewLoading(false); }}
           onSkip={() => {
