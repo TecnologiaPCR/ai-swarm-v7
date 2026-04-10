@@ -104,16 +104,14 @@ const MODELS = {
 // PER-AGENT CONFIG
 // ─────────────────────────────────────────────────────────────────────────────
 const AGENT_MAX_TOKENS = {
-  // All agents get generous output limits for complete, professional artifacts
-  architect:4000,dba:4000,prompt_eng:4000,devops:3500,deploy_eng:3500,tech_writer:3500,
-  security:3200,api_integrator:3200,qa:3200,chaos:3000,bi:3000,
-  ml:3000,i18n:3000,dpo:3000,uiux:3000,copywriter:3000,
-  cx:2800,growth:2800,pm:2800,ba:2800,revenue:2800,performance:2800,
-  disruptor:3000,product_owner:3000,manual_writer:3200,roadmap_eng:2800,post_launch:2800,
-  maintenance:3000,legal:2400,research:2400,prompt_lib:2400,
-  orchestrator:6000,
-  legal:1400,research:1400,prompt_lib:1400,maintenance:2400,
-  product_owner:2200,manual_writer:2400,roadmap_eng:2000,post_launch:1800,disruptor:3200,
+  architect:4000, dba:4000,      prompt_eng:4000, devops:3500,    deploy_eng:3500,
+  tech_writer:3500, security:3200, api_integrator:3200, qa:3200,  chaos:3000,
+  bi:3000,        ml:3000,        i18n:3000,       dpo:3000,      uiux:3000,
+  copywriter:3000, cx:2800,       growth:2800,     pm:2800,       ba:2800,
+  revenue:2800,   performance:2800, disruptor:3000, product_owner:3000, manual_writer:3200,
+  roadmap_eng:2800, post_launch:2800, maintenance:3000, legal:2400, research:2400,
+  prompt_lib:2400,
+  orchestrator:7000,  // always uses Sonnet (maxOut 8000) — never Haiku
 };
 
 const AGENT_READS_FROM = {
@@ -1658,46 +1656,48 @@ RESPONDE SOLO JSON. Sin markdown, sin backticks:
 [{"id":"pq1","question":"pregunta muy concreta","type":"select|multiselect|text","options":["Op1","Op2","Otro"],"why":"qué cambia en el código"}]
 Si no hay brechas críticas: []`;
 
-const ORCHESTRATOR_SYSTEM = `Eres el Orquestador Maestro del AI Swarm. Tu trabajo es sintetizar el output de todos los agentes en UN documento ejecutable que el equipo puede usar directamente.
+const ORCHESTRATOR_SYSTEM = `Eres el Orquestador Maestro del AI Swarm. Tu trabajo: sintetizar TODO el trabajo de los agentes en UN documento ejecutable completo.
 
-RECIBIRÁS: el requerimiento original + el output completo de todos los agentes especializados.
+REGLA CRÍTICA: El plan NUNCA se corta. Si necesitas más espacio, resume secciones anteriores pero SIEMPRE completa todas las secciones hasta el final. Un plan cortado es un plan inútil.
 
-ENTREGA OBLIGATORIA — en este orden exacto, sin texto entre secciones:
+ENTREGA OBLIGATORIA — completa todas las secciones en orden:
 
-## PLAN MAESTRO DE EJECUCIÓN
+## 🎯 RESUMEN EJECUTIVO
+Una línea: qué se construye, para quién, con qué stack.
 
-### Paso a paso (ordenado, con comandos reales)
-| # | Acción | Comando / Archivo | Tiempo est. |
-|---|---|---|---|
-| 1 | ... | \`comando exacto\` | Xmin |
+## 📋 PLAN DE EJECUCIÓN PASO A PASO
+| # | Acción | Comando / Archivo | Responsable | Tiempo |
+|---|---|---|---|---|
+(mínimo 10 pasos concretos con comandos reales)
 
-### .env completo del proyecto
+## ⚙️ VARIABLES DE ENTORNO (.env completo)
 \`\`\`bash
-# Copia esto a tu .env — todos los valores reales del proyecto
-VARIABLE=valor
+# Copia esto — valores reales, sin placeholders
+VARIABLE=valor_real
 \`\`\`
 
-### Estructura de archivos a crear
+## 📁 ESTRUCTURA DE ARCHIVOS
 \`\`\`
 proyecto/
-├── archivo1.ts     # descripción
-├── archivo2.sql    # descripción
+├── (estructura completa)
 \`\`\`
 
-### Prompts de vibe coding (ejecutar en orden con Claude)
-\`\`\`
-PROMPT 1 — [nombre del componente]:
-[prompt completo listo para pegar en Claude]
+## 🚀 PROMPTS DE VIBE CODING (listos para Claude)
+PROMPT 1 — [componente]:
+[prompt completo ejecutable]
 ---
-PROMPT 2 — [siguiente componente]:
-[prompt completo listo para pegar en Claude]
-\`\`\`
+PROMPT 2 — [componente]:
+[prompt completo ejecutable]
 
-### Checklist de deploy
-- [ ] comando o acción concreta
-- [ ] siguiente acción
+## ✅ CHECKLIST DE DEPLOY
+- [ ] acción concreta
+(mínimo 8 items)
 
-Sin introducción. Sin conclusión. Solo el plan ejecutable.`;
+## 📊 MÉTRICAS DE ÉXITO
+- KPI 1: [métrica medible]
+- KPI 2: [métrica medible]
+
+Sin introducción. Sin conclusión. COMPLETA todas las secciones.`;
 
 // Robust JSON extractor for interview responses
 function parseInterviewJSON(raw) {
@@ -3315,7 +3315,12 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
   const [autoDetect, setAutoDetect]   = useState(null);   // inferred project metadata
   const [masterPlan, setMasterPlan]   = useState(null);
   const [routerPlan, setRouterPlan]   = useState(null);   // which agents + dynamic agents
-  const [dynamicAgents, setDynamicAgents] = useState([]); // created at runtime   // orchestrator final output
+  const [dynamicAgents, setDynamicAgents] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem("swarm_dynamic_agents");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  }); // created at runtime, persisted in session   // orchestrator final output
   const [masterPlanLoading, setMasterPlanLoading] = useState(false);
 
   // Agent tracking
@@ -3503,9 +3508,9 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
         + "\n\n══════════════════════════════════════\n"
         + "Con base en TODO lo anterior, genera el PLAN MAESTRO DE EJECUCIÓN completo.";
 
-      // Orchestrator always uses best available model
-      // Prefer Sonnet for quality; Haiku if that's what user selected (tokens capped to 4096)
-      const orchModelKey = modelKey === "gemini" ? "sonnet" : modelKey;
+      // Orchestrator ALWAYS uses Sonnet — Plan Maestro must never be truncated
+      // Sonnet has 8000 output tokens, Haiku only 4096 which cuts the plan
+      const orchModelKey = "sonnet";
       const plan = await callModel(
         orchModelKey, ORCHESTRATOR_SYSTEM, orchestratorMsg, "orchestrator", geminiKey
       );
@@ -3773,7 +3778,9 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
             systemPrompt: da.systemPrompt || `Eres ${da.name}. Entrega artefactos ejecutables en español.`,
             dynamic: true,
           }];
-          setDynamicAgents(runtimeAgentsRef.current.filter(a => a.dynamic));
+          const newDynamic = runtimeAgentsRef.current.filter(a => a.dynamic);
+          setDynamicAgents(newDynamic);
+          try { sessionStorage.setItem("swarm_dynamic_agents", JSON.stringify(newDynamic)); } catch {}
         }
       }
     }).catch(() => {}); // never block swarm on router failure
@@ -3894,7 +3901,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
 
   const retryAgent = useCallback(async (agentId) => {
     if (!enrichedIdea) return;
-    const agent = AGENTS.find(a=>a.id===agentId); if(!agent) return;
+    const agent = [...AGENTS,...dynamicAgents].find(a=>a.id===agentId); if(!agent) return;
     setActiveAgents(new Set([agentId]));
     setFailedAgents(prev=>{const s=new Set(prev);s.delete(agentId);return s;});
     try {
@@ -3917,7 +3924,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
   }, [enrichedIdea, modelKey, geminiKey]);
 
   const reset = () => {
-    setStep("input"); setIdea(""); setQuestions([]); setAnswers({}); setInterviewLoading(false); setAgentQuestions(null); setRouterPlan(null); setDynamicAgents([]); setResults({});
+    setStep("input"); setIdea(""); setQuestions([]); setAnswers({}); setInterviewLoading(false); setAgentQuestions(null); setRouterPlan(null); setResults({});
     setCompletedAgents(new Set()); setFailedAgents(new Set()); setActiveAgents(new Set());
     setSynthAgents(new Set()); setError(null); setInterviewRound(1); setEnrichedIdea("");
     setSynthPhase(false); allResultsRef.current = {};
@@ -5336,10 +5343,11 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
                     {dynamicAgents.filter(a=>results[a.id]).length>0&&(
                       <PhaseBlock
                         key="dynamic"
-                        phase={{id:"dynamic",name:"Agentes Dinámicos",color:"#10b981",agents:dynamicAgents.map(a=>a.id)}}
+                        phase={{id:"dynamic",name:"Agentes Dinámicos ✨",color:"#10b981",agents:dynamicAgents.map(a=>a.id)}}
                         phaseIdx={PHASES.length}
                         phaseIds={dynamicAgents.filter(a=>results[a.id]).map(a=>a.id)}
-                        results={results} allExpanded={allExpanded} retryAgent={retryAgent}/>
+                        results={results} allExpanded={allExpanded} retryAgent={retryAgent}
+                        allAgents={[...AGENTS,...dynamicAgents]}/>
                     )}
                   </div>
 
@@ -5613,7 +5621,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // PHASE BLOCK
 // ─────────────────────────────────────────────────────────────────────────────
-function PhaseBlock({ phase, phaseIdx, phaseIds, results, allExpanded, retryAgent }) {
+function PhaseBlock({ phase, phaseIdx, phaseIds, results, allExpanded, retryAgent, allAgents }) {
   const [open, setOpen] = useState(true);
   useEffect(() => { setOpen(allExpanded); }, [allExpanded]);
   const ok  = phaseIds.filter(id=>!results[id]?.isError).length;
@@ -5632,7 +5640,7 @@ function PhaseBlock({ phase, phaseIdx, phaseIds, results, allExpanded, retryAgen
       {open&&(
         <div style={{padding:"8px 12px 12px",background:"#080c14"}}>
           {phaseIds.map((aid,idx)=>{
-            const ag=AGENTS.find(a=>a.id===aid);
+            const ag=(allAgents||AGENTS).find(a=>a.id===aid);
             return ag?<AgentResult key={aid} agent={ag} result={results[aid]} defaultOpen={idx===0&&!results[aid]?.isError} onRetry={results[aid]?.isError?()=>retryAgent(aid):null}/>:null;
           })}
         </div>
