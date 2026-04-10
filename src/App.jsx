@@ -3751,13 +3751,10 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
     setRouterPlan(null);
     cancelRef.current = false;
     allResultsRef.current = {};
-    runtimeAgentsRef.current = runtimeAgents;
 
     // ── Agent setup: start immediately, router runs in background ──────────
     const allIds = agentList;
-
-    // All selected agents run by default — no blocking on router
-    const runtimeAgents = [...AGENTS];
+    const runtimeAgents = [...AGENTS];       // declare BEFORE using
     runtimeAgentsRef.current = runtimeAgents;
     const agentSet = new Set(allIds);
     const runtimePhases = [...PHASES];
