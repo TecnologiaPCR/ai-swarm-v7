@@ -3601,7 +3601,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
         playSound("error"); haptic([20,10,20]);
       }
     });
-    await runPool(tasks, 2);
+    await runPool(tasks, 4);
     setActiveAgents(new Set());
   }, [modelKey, runPool]);
 
@@ -3753,56 +3753,33 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
     allResultsRef.current = {};
     runtimeAgentsRef.current = runtimeAgents;
 
-    // ── Smart Router: decide which agents are needed + create dynamic ones ──
+    // ── Agent setup: start immediately, router runs in background ──────────
     const allIds = agentList;
-    const routing = await runRouter(enriched, allIds);
-    setRouterPlan(routing);
 
-    // Register dynamic agents into runtime registry
+    // All selected agents run by default — no blocking on router
     const runtimeAgents = [...AGENTS];
-    for (const da of (routing.dynamicAgents || [])) {
-      if (!runtimeAgents.find(a => a.id === da.id)) {
-        runtimeAgents.push({
-          id: da.id, name: da.name, icon: da.icon || "🤖",
-          color: da.color || "#7c3aed", desc: da.desc || "",
-          systemPrompt: da.systemPrompt || `Eres ${da.name}. Analiza el requerimiento y entrega tu artefacto especializado en español.`,
-          dynamic: true,
-        });
-      }
-    }
-    setDynamicAgents(runtimeAgents.filter(a => a.dynamic));
     runtimeAgentsRef.current = runtimeAgents;
-
-    // Build agent set — ALWAYS include all selectedAgents, router only ADDS exclusions as hints
-    // Core agents always run regardless of router decision
-    const CORE = new Set(["pm","ba","architect","prompt_eng","qa","security","devops"]);
-    const routerInclude = new Set(routing.include || []);
-    const routerExclude = new Set(routing.exclude || []);
-
-    // agentSet = all selected agents MINUS router exclusions (but never remove core)
-    const agentSet = new Set(
-      allIds.filter(id => {
-        if (CORE.has(id)) return true;           // always run core
-        if (routerInclude.has(id)) return true;  // router explicitly included
-        if (routerExclude.has(id)) return false; // router excluded
-        return true;                             // default: run if selected
-      })
-    );
-    // Add dynamic agents from router
-    for (const da of (routing.dynamicAgents || [])) agentSet.add(da.id);
-
-    // Fallback: if agentSet somehow empty, use all selected agents
-    if (agentSet.size === 0) allIds.forEach(id => agentSet.add(id));
-
-    // Build PHASES with dynamic agents injected into design phase
-    const runtimePhases = PHASES.map(p => {
-      if (p.id === "design" && (routing.dynamicAgents||[]).length > 0) {
-        return { ...p, agents: [...p.agents, ...routing.dynamicAgents.map(a=>a.id)] };
-      }
-      return p;
-    });
-
+    const agentSet = new Set(allIds);
+    const runtimePhases = [...PHASES];
     const doneSet = new Set();
+
+    // Router runs async in background — applies exclusions/dynamic agents AFTER swarm starts
+    runRouter(enriched, allIds).then(routing => {
+      if (!routing) return;
+      setRouterPlan(routing);
+      // Register dynamic agents for future phases
+      for (const da of (routing.dynamicAgents || [])) {
+        if (!runtimeAgentsRef.current.find(a => a.id === da.id)) {
+          runtimeAgentsRef.current = [...runtimeAgentsRef.current, {
+            id: da.id, name: da.name, icon: da.icon || "🤖",
+            color: da.color || "#7c3aed", desc: da.desc || "",
+            systemPrompt: da.systemPrompt || `Eres ${da.name}. Entrega artefactos ejecutables en español.`,
+            dynamic: true,
+          }];
+          setDynamicAgents(runtimeAgentsRef.current.filter(a => a.dynamic));
+        }
+      }
+    }).catch(() => {}); // never block swarm on router failure
 
     // Run phases SEQUENTIALLY with approval gate between each
     for (let pi=0; pi<runtimePhases.length; pi++) {
