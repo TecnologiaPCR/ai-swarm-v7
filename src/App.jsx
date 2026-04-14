@@ -3497,6 +3497,22 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
         phasedContext += phaseText;
       }
 
+      // Add dynamic agents outputs (not in static PHASE_LABELS)
+      const dynamicIds = Object.keys(allResults).filter(id =>
+        !AGENTS.find(a => a.id === id) && allResults[id] && !allResults[id].isError
+      );
+      if (dynamicIds.length > 0 && totalChars < MAX_TOTAL) {
+        let dynText = "\n\n── AGENTES ESPECIALIZADOS ADICIONALES ──\n";
+        for (const id of dynamicIds) {
+          if (totalChars >= MAX_TOTAL) break;
+          const ag = (runtimeAgentsRef.current || AGENTS).find(a => a.id === id);
+          const snippet = (allResults[id].text || "").slice(0, 500);
+          dynText += "\n[" + (ag?.icon||"🤖") + " " + (ag?.name||id) + "]\n" + snippet + "\n";
+          totalChars += snippet.length;
+        }
+        phasedContext += dynText;
+      }
+
       const ideaSnippet = enriched.slice(0, 1000);
       const successCount = Object.values(allResults).filter(r => !r.isError).length;
 
@@ -3757,33 +3773,70 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
     cancelRef.current = false;
     allResultsRef.current = {};
 
-    // ── Agent setup: start immediately, router runs in background ──────────
+    // ── Agent setup: router runs with 8s timeout then agents start ─────────
     const allIds = agentList;
-    const runtimeAgents = [...AGENTS];       // declare BEFORE using
-    runtimeAgentsRef.current = runtimeAgents;
-    const agentSet = new Set(allIds);
-    const runtimePhases = [...PHASES];
-    const doneSet = new Set();
 
-    // Router runs async in background — applies exclusions/dynamic agents AFTER swarm starts
-    runRouter(enriched, allIds).then(routing => {
-      if (!routing) return;
-      setRouterPlan(routing);
-      // Register dynamic agents for future phases
-      for (const da of (routing.dynamicAgents || [])) {
-        if (!runtimeAgentsRef.current.find(a => a.id === da.id)) {
-          runtimeAgentsRef.current = [...runtimeAgentsRef.current, {
-            id: da.id, name: da.name, icon: da.icon || "🤖",
-            color: da.color || "#7c3aed", desc: da.desc || "",
-            systemPrompt: da.systemPrompt || `Eres ${da.name}. Entrega artefactos ejecutables en español.`,
-            dynamic: true,
-          }];
-          const newDynamic = runtimeAgentsRef.current.filter(a => a.dynamic);
-          setDynamicAgents(newDynamic);
-          try { sessionStorage.setItem("swarm_dynamic_agents", JSON.stringify(newDynamic)); } catch {}
-        }
+    // Load previously saved dynamic agents from session
+    let savedDynamic = [];
+    try {
+      const saved = sessionStorage.getItem("swarm_dynamic_agents");
+      if (saved) savedDynamic = JSON.parse(saved);
+    } catch {}
+
+    // Build initial runtime registry including saved dynamic agents
+    const runtimeAgents = [...AGENTS, ...savedDynamic.filter(d => !AGENTS.find(a=>a.id===d.id))];
+    runtimeAgentsRef.current = runtimeAgents;
+
+    // Run router with timeout — waits up to 8s then proceeds with all agents
+    let routing = { include: allIds, excludeReasons: {}, dynamicAgents: [] };
+    try {
+      routing = await Promise.race([
+        runRouter(enriched, allIds),
+        new Promise(res => setTimeout(() => res({ include: allIds, excludeReasons: {}, dynamicAgents: [] }), 8000))
+      ]);
+    } catch {}
+
+    setRouterPlan(routing);
+
+    // Register NEW dynamic agents from router into runtime registry
+    const newDynAgents = [];
+    for (const da of (routing.dynamicAgents || [])) {
+      if (!runtimeAgentsRef.current.find(a => a.id === da.id)) {
+        const newAgent = {
+          id: da.id, name: da.name, icon: da.icon || "🤖",
+          color: da.color || "#10b981", desc: da.desc || "",
+          systemPrompt: da.systemPrompt || `Eres ${da.name}, especialista del AI Swarm Lab. Analiza el requerimiento y entrega artefactos ejecutables en español.`,
+          dynamic: true,
+        };
+        runtimeAgentsRef.current = [...runtimeAgentsRef.current, newAgent];
+        newDynAgents.push(newAgent);
       }
-    }).catch(() => {}); // never block swarm on router failure
+    }
+
+    // Merge with saved dynamic agents and persist ALL to sessionStorage
+    const allDynamic = [...savedDynamic, ...newDynAgents].filter(
+      (a, i, arr) => arr.findIndex(x => x.id === a.id) === i
+    );
+    if (allDynamic.length > 0) {
+      setDynamicAgents(allDynamic);
+      try { sessionStorage.setItem("swarm_dynamic_agents", JSON.stringify(allDynamic)); } catch {}
+    }
+
+    // Build agent set: selected agents + all dynamic agents
+    const agentSet = new Set([
+      ...allIds,
+      ...allDynamic.map(a => a.id),
+    ]);
+
+    // Build runtime phases: inject dynamic agents into DESIGN phase
+    const runtimePhases = PHASES.map(p => {
+      if (p.id === "design" && newDynAgents.length > 0) {
+        return { ...p, agents: [...p.agents, ...newDynAgents.map(a => a.id)] };
+      }
+      return p;
+    });
+
+    const doneSet = new Set();
 
     // Run phases SEQUENTIALLY with approval gate between each
     for (let pi=0; pi<runtimePhases.length; pi++) {
@@ -3901,7 +3954,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
 
   const retryAgent = useCallback(async (agentId) => {
     if (!enrichedIdea) return;
-    const agent = [...AGENTS,...dynamicAgents].find(a=>a.id===agentId); if(!agent) return;
+    const agent = (runtimeAgentsRef.current || [...AGENTS,...dynamicAgents]).find(a=>a.id===agentId); if(!agent) return;
     setActiveAgents(new Set([agentId]));
     setFailedAgents(prev=>{const s=new Set(prev);s.delete(agentId);return s;});
     try {
@@ -5091,7 +5144,7 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
                             <div style={{fontSize:9,fontWeight:700,letterSpacing:1.5,color:phase.color,fontFamily:"'Syne',sans-serif",textTransform:"uppercase",marginBottom:4}}>{phase.name}</div>
                             <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
                               {phase.agents.map(aid=>{
-                                const ag=AGENTS.find(a=>a.id===aid); if(!ag) return null;
+                                const ag=(runtimeAgentsRef.current||AGENTS).find(a=>a.id===aid); if(!ag) return null;
                                 const sel=selectedAgents.has(aid);
                                 return (
                                   <button key={aid} onClick={()=>setSelectedAgents(prev=>{const s=new Set(prev);s.has(aid)?s.delete(aid):s.add(aid);return s;})}
