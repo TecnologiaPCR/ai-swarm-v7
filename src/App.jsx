@@ -1586,59 +1586,68 @@ RESPONDE SOLO JSON válido, sin markdown, sin texto extra:
 }`;
 
 // Master orchestrator: consolidates ALL agent outputs into ONE executable plan
-const ROUTER_SYSTEM = `Eres el Router Inteligente del AI Swarm Lab. Tu trabajo: dado un requerimiento, decidir con PRECISIÓN qué agentes son necesarios y si hay roles que faltan.
+const ROUTER_SYSTEM = `Eres el Router Inteligente del AI Swarm Lab. Tu misión: maximizar el valor del enjambre para cada requerimiento.
 
-AGENTES DISPONIBLES (31):
-pm, ba, revenue, architect, prompt_eng, dba, api_integrator, security, uiux, cx, copywriter, growth, devops, performance, i18n, ml, bi, qa, chaos, prompt_lib, dpo, legal, research, disruptor, deploy_eng, maintenance, product_owner, tech_writer, manual_writer, roadmap_eng, post_launch
+FILOSOFÍA: Incluir agentes cuesta poco. Excluir demasiado reduce calidad. Ante la duda, INCLUYE.
 
-REGLAS DE DECISIÓN:
-- SIEMPRE incluir: pm, ba, architect, prompt_eng, qa, security, devops
-- Solo incluir si aplica:
-  * revenue → si hay modelo de negocio, monetización o SaaS
-  * ml → solo si hay predicción, recomendaciones, clasificación, NLP real
-  * i18n → solo si hay múltiples idiomas o RTL explícito
-  * bi → solo si hay dashboards, KPIs o reportes analíticos
-  * cx → solo si hay producto de cara al cliente final
-  * dpo/legal → solo si hay datos personales o cumplimiento regulatorio
-  * growth → solo si hay estrategia de adquisición o marketing
-  * chaos → solo si hay sistemas distribuidos o alta disponibilidad requerida
-  * copywriter → solo si hay interfaces de usuario con texto
-  * performance → solo si hay SLAs de performance o sitio web público
-  * i18n → solo si hay requisito multiidioma
-  * manual_writer → solo si hay usuarios finales no técnicos
-  * roadmap_eng → solo si es producto con versiones múltiples
-  * post_launch → siempre útil para proyectos de producción
-  * disruptor → solo si se pide innovación o modelo de negocio nuevo
-  * prompt_lib → solo si el proyecto usa IA extensivamente
-  * maintenance → solo si hay SLAs de operaciones post-deploy
-  * research → solo si hay tecnologías emergentes o comparación de opciones
-  * api_integrator → solo si hay integraciones con terceros
-  * dba → solo si hay base de datos relacional o esquema complejo
-  * uiux → solo si hay interfaz visual
-  * product_owner → solo si hay backlog y múltiples stakeholders
-  * tech_writer → siempre útil para proyectos con código
+AGENTES BASE (siempre incluir — no los pongas en exclude nunca):
+pm, ba, architect, prompt_eng, qa, security, devops, tech_writer
 
-AGENTES DINÁMICOS (crear si faltan):
-Si el requerimiento necesita un perfil especializado que NO está en la lista, debes crearlo.
-Ejemplos: blockchain_engineer, iot_specialist, ml_ops, data_engineer, mobile_dev, game_designer, etc.
+AGENTES CONDICIONALES (incluir si aplica):
+- revenue → si hay monetización, SaaS, precios o modelo de negocio
+- dba → si hay base de datos, persistencia o esquema de datos  
+- api_integrator → si hay integraciones con APIs externas o sistemas legacy
+- uiux → si hay interfaz visual o experiencia de usuario
+- cx → si hay usuarios finales o customer journey
+- copywriter → si hay textos, emails, notificaciones o UI copy
+- growth → si hay usuarios, adquisición o métricas de negocio
+- performance → si hay sitio web, API pública o SLAs
+- ml → solo si hay predicción, recomendaciones, clasificación o NLP
+- i18n → solo si hay múltiples idiomas explícitos
+- bi → si hay reportes, dashboards o análisis de datos
+- dpo/legal → si hay datos personales, cumplimiento o regulación
+- chaos → si hay alta disponibilidad, microservicios o sistemas críticos
+- disruptor → SIEMPRE útil para ver el ángulo innovador
+- deploy_eng → SIEMPRE incluir para proyectos que van a producción
+- product_owner → si hay múltiples features o backlog
+- maintenance → si hay operaciones post-deploy
+- research → si hay tecnologías nuevas o comparaciones
+- post_launch → SIEMPRE para proyectos completos
+- prompt_lib → si el proyecto usa IA extensivamente
+- manual_writer → si hay usuarios finales no técnicos
+
+AGENTES DINÁMICOS — CREA si el requerimiento necesita expertise específico no cubierto:
+Ejemplos de cuándo crear:
+- App de salud/médica → healthcare_specialist
+- E-commerce → ecommerce_specialist  
+- IoT/hardware → iot_engineer
+- Blockchain/cripto → blockchain_engineer
+- Juego/gaming → game_designer
+- App móvil nativa → mobile_dev
+- Data pipeline → data_engineer
+- ML en producción → mlops_engineer
+- Fintech/pagos → fintech_specialist
+- Educación → edtech_specialist
+Crea agentes dinámicos generosamente cuando el dominio lo requiera.
 
 RESPONDE SOLO JSON VÁLIDO. Sin markdown, sin texto extra:
 {
-  "include": ["pm","ba","architect",...],
-  "exclude": ["ml","i18n",...],
-  "exclude_reasons": {"ml": "no hay predicción ni ML en el req", "i18n": "app interna en español"},
+  "include": ["pm","ba","architect",...todos los relevantes...],
+  "exclude": [...solo los CLARAMENTE irrelevantes...],
+  "exclude_reasons": {"agente": "razón concreta"},
   "dynamic_agents": [
     {
-      "id": "blockchain_eng",
-      "name": "Blockchain Engineer",
-      "icon": "⛓️",
-      "color": "#F59E0B",
-      "desc": "Diseña contratos inteligentes y arquitectura blockchain",
+      "id": "nombre_snake_case",
+      "name": "Nombre del Agente",
+      "icon": "emoji",
+      "color": "#hexcolor",
+      "desc": "Una línea: qué hace exactamente",
       "phase": "design",
-      "systemPrompt": "Eres el Blockchain Engineer del AI Swarm. Tu rol: diseñar contratos inteligentes (Solidity/Rust), arquitectura on-chain/off-chain, tokenomics, y wallets. Entrega: contratos comentados, deployment scripts, arquitectura de nodos. Responde en español con código ejecutable."
+      "systemPrompt": "Eres el [Nombre] del AI Swarm Lab. Tu rol específico: [descripción detallada]. Entrega artefactos ejecutables en español con código real, no pseudocódigo."
     }
   ]
 }`;
+;
 
 const PHASE_QUESTION_SYSTEM = `Eres el coordinador inteligente del AI Swarm Lab.
 Los agentes de la fase INTAKE (PM, BA, Revenue Strategist, Prompt Engineer) acaban de analizar el requerimiento.
@@ -5320,53 +5329,32 @@ function AISwarm({ currentUser, onLogout, onOpenAdmin, theme, setTheme }) {
                     </div>
                   )}
 
-                  {/* ── Router Plan: excluded agents + dynamic agents ── */}
-                  {routerPlan && (
-                    <div style={{marginBottom:12,animation:"slideInLeft .4s ease both"}}>
-                      {/* Excluded agents */}
-                      {routerPlan.exclude && routerPlan.exclude.length > 0 && (
-                        <div style={{display:"flex",gap:6,flexWrap:"wrap",padding:"8px 12px",
-                          borderRadius:10,background:"var(--bg-surface-1)",
-                          border:"1px solid var(--border-base)",marginBottom:6}}>
-                          <span style={{fontSize:10,fontWeight:800,color:"var(--text-muted)",
-                            textTransform:"uppercase",letterSpacing:1,alignSelf:"center"}}>
-                            ⏭ Omitidos:
+                  {/* ── Router Plan: dynamic agents created ── */}
+                  {dynamicAgents.length > 0 && (
+                    <div style={{marginBottom:12,animation:"slideInLeft .4s ease both",
+                      padding:"10px 14px",borderRadius:12,
+                      background:"rgba(16,185,129,.06)",
+                      border:"1.5px solid rgba(16,185,129,.25)"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                        <span style={{fontSize:14}}>✨</span>
+                        <span style={{fontSize:10,fontWeight:800,color:"#10b981",
+                          textTransform:"uppercase",letterSpacing:1}}>
+                          Agentes especializados creados para este proyecto
+                        </span>
+                      </div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                        {dynamicAgents.map(ag => (
+                          <span key={ag.id} title={ag.desc}
+                            style={{padding:"4px 12px",borderRadius:999,fontSize:11,
+                              fontWeight:700,background:"rgba(16,185,129,.12)",
+                              border:"1.5px solid rgba(16,185,129,.35)",
+                              color:"#10b981",cursor:"default",
+                              display:"inline-flex",alignItems:"center",gap:5}}>
+                            <span>{ag.icon}</span>
+                            <span>{ag.name}</span>
                           </span>
-                          {routerPlan.exclude.map(id => {
-                            const ag = [...AGENTS,...dynamicAgents].find(a=>a.id===id);
-                            const reason = routerPlan.excludeReasons?.[id];
-                            return (
-                              <span key={id} title={reason||""}
-                                style={{padding:"3px 9px",borderRadius:999,fontSize:10,
-                                  fontWeight:700,background:"rgba(239,68,68,.07)",
-                                  border:"1px solid rgba(239,68,68,.15)",
-                                  color:"#f87171",cursor:"default"}}>
-                                {ag?.icon} {ag?.name||id}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      )}
-                      {/* Dynamic agents created */}
-                      {dynamicAgents.length > 0 && (
-                        <div style={{display:"flex",gap:6,flexWrap:"wrap",padding:"8px 12px",
-                          borderRadius:10,background:"rgba(16,185,129,.05)",
-                          border:"1px solid rgba(16,185,129,.2)"}}>
-                          <span style={{fontSize:10,fontWeight:800,color:"#10b981",
-                            textTransform:"uppercase",letterSpacing:1,alignSelf:"center"}}>
-                            ✨ Agentes creados:
-                          </span>
-                          {dynamicAgents.map(ag => (
-                            <span key={ag.id} title={ag.desc}
-                              style={{padding:"3px 9px",borderRadius:999,fontSize:10,
-                                fontWeight:700,background:"rgba(16,185,129,.1)",
-                                border:"1px solid rgba(16,185,129,.3)",
-                                color:"#10b981",cursor:"default"}}>
-                              {ag.icon} {ag.name}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                        ))}
+                      </div>
                     </div>
                   )}
 
